@@ -89,5 +89,5 @@ CoinMarketCap API Documentation: \url{https://coinmarketcap.com/api/}
 }
 }
 \author{
-Your Name
+Filippo Franchini
 }
