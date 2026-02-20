@@ -17,6 +17,7 @@ Imports:
     dplyr,
     fredr,
     ggplot2,
+    gtrendsR,
     scales,
     TTR,
     zoo

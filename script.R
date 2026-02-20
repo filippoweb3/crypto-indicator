@@ -1,26 +1,43 @@
-
-
 # Packages ----
-
-library(crypto2)
-library(TTR)
 library(dplyr)
 library(ggplot2)
-library(patchwork)
-library(cryptoQuotes)
-library(fredr)
-library(zoo)
-library(scales)
 
-# Get Market Data ----
+# Test Helpers ----
+
+## Get Market Data ----
 
 data <- get_market_data()
 
-# Compute Indicators ----
+## Compute Indicators ----
 
 ind_data <- get_onchain_indicators(data$data)
 
-## Charts ----
+## Compute Derivatives Data ----
+
+deriv <- get_derivatives()
+
+## Compute Macro Data ----
+
+macro <- get_macro()
+
+## Compute Volatility Data ----
+
+vol <- get_volatility(data = ind_data)
+
+## Compute Positioning Data ----
+
+pos <- get_positioning(api_key = global_variables$whaleAlert_api_key)
+
+# Engage Decision Framework ----
+
+frame <- crypto_predictive_framework(fred_api_key = global_variables$fred_api_key,
+                                     whale_api_key = global_variables$whaleAlert_api_key)
+
+print_crypto_summary(frame)
+
+
+
+# Charts ----
 
 p1 <- ggplot(data = data$data, aes(x = time_close)) +
   geom_point(aes(y = close)) +
@@ -30,7 +47,7 @@ p1 <- ggplot(data = data$data, aes(x = time_close)) +
   labs(title = "Bitcoin", subtitle = "Prices, Volumes and Returns since 2020",
        x="Time", y="Price (USD)") +
   theme(plot.title = element_text(size=20, face="bold", margin = margin(10, 0, 10, 0)),
-       axis.text.x = element_text(angle=45, vjust=0.5), legend.title = element_text(size=12, face="bold")) +
+        axis.text.x = element_text(angle=45, vjust=0.5), legend.title = element_text(size=12, face="bold")) +
   scale_color_manual(name = "Indicators",
                      values = c("MA 50" = "blue", "MA 200" = "red"))
 
@@ -65,15 +82,6 @@ p3 <- ggplot(data = data$data, aes(x = time_close)) +
                          x="Time", y="Return", caption = "Source: crypto2 R-Package")
 
 p1 / p2 / p3
-
-
-deriv <- get_derivatives()
-
-macro <- get_macro()
-
-vol <- get_volatility(data = ind_data)
-
-pos <- get_positioning(api_key = global_variables$whaleAlert_api_key)
 
 
 
