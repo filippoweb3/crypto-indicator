@@ -1,10 +1,88 @@
-#' Get Market Data
+#' Retrieve historical cryptocurrency market data
 #'
-#' @param assets Character vector of assets names (Bitcoin and Ethereum are default)
-#' @param start_date Date for the start of data collection
-#' @param include_eth Bool
-#' @return List containing price data and metadata
+#' @description
+#' Fetches historical price, volume, and market capitalization data for specified
+#' cryptocurrencies from CoinMarketCap via the crypto2 package. This function serves
+#' as the primary data acquisition layer for the crypto predictive framework, providing
+#' consistent OHLCV (Open, High, Low, Close, Volume) data for subsequent indicator
+#' calculations.
+#'
+#' @param assets Character vector of cryptocurrency names to fetch data for.
+#'   Default is c("Bitcoin"). Names must match CoinMarketCap naming conventions
+#'   (e.g., "Bitcoin", "Ethereum", "Cardano"). Case-sensitive.
+#' @param start_date Start date for historical data collection in "YYYY-MM-DD" format.
+#'   Default is "2015-01-01". Data will be fetched from this date to present.
+#'
+#' @return A list object of class \code{market_data} containing:
+#'   \describe{
+#'     \item{data}{A data frame with the following columns:
+#'       \itemize{
+#'         \item \code{timestamp}: Date of the observation
+#'         \item \code{slug}: Asset identifier (e.g., "bitcoin")
+#'         \item \code{symbol}: Trading symbol (e.g., "BTC")
+#'         \item \code{name}: Full asset name (e.g., "Bitcoin")
+#'         \item \code{open}, \code{high}, \code{low}, \code{close}: OHLC prices in USD
+#'         \item \code{volume}: Trading volume in USD
+#'         \item \code{market_cap}: Market capitalization in USD
+#'       }
+#'     }
+#'     \item{assets}{Character vector of requested asset names (echoed input)}
+#'     \item{start_date}{Requested start date (echoed input)}
+#'     \item{last_update}{System date when data was fetched}
+#'   }
+#'
+#' @details
+#' The function uses \code{crypto2::crypto_history()} which sources data from
+#' CoinMarketCap's historical API. Key characteristics:
+#' \itemize{
+#'   \item Data frequency: Daily
+#'   \item Price currency: USD
+#'   \item Coverage: From 2013 for major assets, later for smaller assets
+#'   \item Rate limiting: Respects API rate limits (use responsibly)
+#' }
+#'
+#' @note
+#' \itemize{
+#'   \item Internet connection required
+#'   \item First call may be slow as it caches coin list
+#'   \item Some assets may have limited historical data before their listing date
+#'   \item Market capitalization is as reported by CoinMarketCap
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' # Get Bitcoin data from 2020 onwards
+#' btc_data <- get_market_data(assets = "Bitcoin", start_date = "2020-01-01")
+#'
+#' # Get multiple assets
+#' multi_asset <- get_market_data(
+#'   assets = c("Bitcoin", "Ethereum"),
+#'   start_date = "2018-01-01"
+#' )
+#'
+#' # Access the data
+#' head(multi_asset$data)
+#'
+#' # Check metadata
+#' cat("Assets:", paste(multi_asset$assets, collapse = ", "), "\n")
+#' cat("Last updated:", multi_asset$last_update)
+#' }
+#'
+#' @seealso
+#' \itemize{
+#'   \item \code{\link{get_onchain_indicators}} for deriving on-chain metrics from this data
+#'   \item \code{\link{get_volatility}} for volatility calculations
+#'   \item \code{crypto2::crypto_history()} for underlying API details
+#' }
+#'
+#' @references
+#' CoinMarketCap API Documentation: \url{https://coinmarketcap.com/api/}
+#'
+#' @author Filippo Franchini
 #' @export
+#'
+#' @importFrom dplyr filter
+#' @importFrom crypto2 crypto_list crypto_history
 get_market_data <- function(assets = c("Bitcoin"), start_date = "2015-01-01"){
 
   coin_list <- crypto2::crypto_list() %>% dplyr::filter(name %in% assets)
