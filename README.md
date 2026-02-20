@@ -76,11 +76,7 @@ installed automatically:
 library(CryptoIndicator)
 
 # Run the complete analysis pipeline
-result <- crypto_predictive_framework(
-  assets = "Bitcoin",
-  start_date = "2015-01-01",
-  include_google_trends = TRUE
-)
+result <- crypto_predictive_framework()
 
 # View the executive summary
 print_crypto_summary(result)
@@ -90,6 +86,8 @@ result$decisions$risk_off$color           # Current risk level
 result$signals$onchain$mvrv$regime        # Market valuation regime
 result$decisions$regime_allocation$allocation$strategic  # Recommended allocation
 ```
+
+You can update the API keys in the `global_variables.R` script.
 
 ------------------------------------------------------------------------
 

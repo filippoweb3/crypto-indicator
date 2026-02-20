@@ -293,8 +293,8 @@
 #' @importFrom dplyr filter slice_tail case_when
 crypto_predictive_framework <- function(assets = c("Bitcoin"),
                                         start_date = "2015-01-01",
-                                        fred_api_key = NULL,
-                                        whale_api_key = NULL,
+                                        fred_api_key = global_variables$fred_api_key,
+                                        whale_api_key = global_variables$whaleAlert_api_key,
                                         include_google_trends = TRUE) {
 
   #---------------------------------------------------------------------------
