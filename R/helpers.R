@@ -910,8 +910,24 @@ get_macro <- function(fred_api_key = global_variables$fred_api_key, start_date =
 
   # US Dollar Index (DXY) - Inverse correlation with crypto
   dxy <- tryCatch({
-    quantmod::getSymbols("DX-Y.NYB", src = "yahoo", auto.assign = FALSE)
-  }, error = function(e) NULL)
+    # Suppress the missing values warning
+    suppressWarnings({
+      quantmod::getSymbols("DX-Y.NYB", src = "yahoo", auto.assign = FALSE)
+    })
+  }, error = function(e) {
+    message("Note: DXY data unavailable from Yahoo Finance")
+    return(NULL)
+  })
+
+  if (!is.null(dxy)) {
+    # Check for missing values
+    if (any(is.na(dxy))) {
+      # Fill missing values using last observation carried forward
+      dxy <- zoo::na.locf(dxy, na.rm = FALSE)
+      # Fill any remaining leading NAs with next observation
+      dxy <- zoo::na.locf(dxy, fromLast = TRUE, na.rm = FALSE)
+    }
+  }
 
   dollar_regime <- ifelse(
     !is.null(dxy) && tail(quantmod::Cl(dxy), 1) > 100, "Strong Dollar (Bearish Crypto)",
@@ -1622,28 +1638,33 @@ get_positioning <- function(api_key = NULL, start_time = "2026-02-01", google_tr
       gprop = "web"
     )
 
-    # Extract interest over time
-    interest_data <- trends$interest_over_time
+    if (!is.null(trends$interest_over_time)) {
+      interest_data <- trends$interest_over_time
 
-    # Calculate average sentiment score (0-100 scale)
-    recent_interest <- interest_data[interest_data$date > Sys.Date() - 7, ]
-    sentiment_score <- mean(recent_interest$hits, na.rm = TRUE)
+      # Fix timezone issues by converting to Date
+      interest_data$date <- as.Date(interest_data$date)
 
-    # Generate sentiment signal
-    sentiment_signal <- ifelse(
-      sentiment_score > 80, "Extreme Interest (Potential Top)",
-      ifelse(sentiment_score < 20, "Low Interest (Potential Bottom)",
-             ifelse(sentiment_score > 60, "High Interest", "Normal Interest"))
-    )
+      # Calculate average sentiment score (0-100 scale)
+      recent_interest <- interest_data[interest_data$date > Sys.Date() - 7, ]
+      sentiment_score <- mean(recent_interest$hits, na.rm = TRUE)
 
-    google_trends_data <- list(
-      interest_over_time = interest_data,
-      related_queries = trends$related_queries,
-      interest_by_region = trends$interest_by_region,
-      current_sentiment = sentiment_score,
-      sentiment_signal = sentiment_signal,
-      keywords = google_trends_keywords
-    )
+      # Generate sentiment signal
+      sentiment_signal <- dplyr::case_when(
+        sentiment_score > 80 ~ "Extreme Interest (Potential Top)",
+        sentiment_score > 60 ~ "High Interest",
+        sentiment_score > 20 ~ "Normal Interest",
+        TRUE ~ "Low Interest (Potential Bottom)"
+      )
+
+      google_trends_data <- list(
+        interest_over_time = interest_data,
+        related_queries = trends$related_queries,
+        interest_by_region = trends$interest_by_region,
+        current_sentiment = sentiment_score,
+        sentiment_signal = sentiment_signal,
+        keywords = google_trends_keywords
+      )
+    }
 
   }, error = function(e) {
     warning("Failed to fetch Google Trends data: ", e$message)
@@ -1659,7 +1680,7 @@ get_positioning <- function(api_key = NULL, start_time = "2026-02-01", google_tr
     whale_activity = list(
       total_tx = metrics$tx_count,
       whale_signal = whale_signal,
-      largest_move_usd = max(whale_df$amount_usd)
+      largest_move_usd = max(whale_df$amount_usd, na.rm = TRUE)
     ),
     raw_whale_data = whale_df, # Useful for plotting individual bubbles later
     google_trends = google_trends_data

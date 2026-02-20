@@ -1,6 +1,6 @@
 # app.R
 # Enhanced CryptoIndicator Shiny Application
-# With Progress Bar and Volatility Module
+# With API Key Selection from Global Variables
 
 library(shiny)
 library(CryptoIndicator)
@@ -12,12 +12,9 @@ library(shinythemes)
 ui <- fluidPage(
   theme = shinytheme("darkly"),
 
-  # Custom CSS for progress bar
+  # Custom CSS
   tags$head(
     tags$style(HTML("
-      .progress-bar {
-        transition: width 0.3s ease;
-      }
       .well {
         background-color: #2c3e50;
         color: white;
@@ -25,6 +22,12 @@ ui <- fluidPage(
       .risk-GREEN { background-color: #28a745; color: white; padding: 10px; border-radius: 5px; }
       .risk-YELLOW { background-color: #ffc107; color: black; padding: 10px; border-radius: 5px; }
       .risk-RED { background-color: #dc3545; color: white; padding: 10px; border-radius: 5px; }
+      .api-section {
+        background-color: #34495e;
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+      }
     "))
   ),
 
@@ -41,7 +44,7 @@ ui <- fluidPage(
       # Asset selection
       selectInput("asset",
                   "Select Asset:",
-                  choices = c("Bitcoin", "Ethereum"),
+                  choices = c("Bitcoin"),
                   selected = "Bitcoin"),
 
       # Date range
@@ -50,11 +53,28 @@ ui <- fluidPage(
                      start = "2020-01-01",
                      end = Sys.Date()),
 
-      # API keys (optional)
-      textInput("fred_key", "FRED API Key (optional):", value = "",
-                placeholder = "Enter FRED API key"),
-      textInput("whale_key", "Whale Alert API Key (optional):", value = "",
-                placeholder = "Enter Whale Alert API key"),
+      br(),
+
+      # API Keys Section
+      div(class = "api-section",
+          h4("🔑 API Keys", style = "color: #3498db;"),
+
+          # FRED API Key dropdown
+          selectInput("fred_key_select",
+                      "FRED API Key:",
+                      choices = c("None", "Use from global_variables"),
+                      selected = "Use from global_variables"),
+
+          # Whale Alert API Key dropdown
+          selectInput("whale_key_select",
+                      "Whale Alert API Key:",
+                      choices = c("None", "Use from global_variables"),
+                      selected = "Use from global_variables"),
+
+
+          tags$small(class = "text-muted",
+                     "Select 'Use from global_variables' to use keys from global_variables list")
+      ),
 
       # Action button
       actionButton("run", "Run Analysis",
@@ -63,20 +83,18 @@ ui <- fluidPage(
 
       br(), br(),
 
-      # Progress Bar
-      wellPanel(
-        h4("📊 Progress"),
-        div(class = "progress",
-            div(id = "progress_bar", class = "progress-bar progress-bar-striped active",
-                style = "width: 0%;", "0%")
-        ),
-        textOutput("progress_status")
-      ),
-
       # Status message
       textOutput("status"),
       br(),
-      textOutput("last_price")
+      textOutput("last_price"),
+
+      # API Status
+      br(),
+      div(class = "api-section",
+          h5("API Status:", style = "color: #3498db;"),
+          textOutput("fred_status"),
+          textOutput("whale_status")
+      )
     ),
 
     # Main panel for outputs
@@ -180,46 +198,73 @@ server <- function(input, output, session) {
   # Reactive value to store results
   results <- reactiveVal(NULL)
 
-  # Progress tracking
-  progress_values <- reactiveVal(0)
-  progress_message <- reactiveVal("Ready")
-
-  # Update progress bar
-  observe({
-    invalidateLater(100, session)
-    if (progress_values() < 100) {
-      # Simulate progress when analysis is running
-      if (progress_message() == "Running analysis...") {
-        new_val <- min(progress_values() + runif(1, 1, 3), 99)
-        progress_values(new_val)
-      }
+  # Global variables list (in real app, this would be loaded from environment)
+  global_variables <- reactive({
+    # Try to get from global environment
+    if (exists("global_variables", envir = .GlobalEnv)) {
+      get("global_variables", envir = .GlobalEnv)
+    } else {
+      # Return empty list if not found
+      list(
+        fred_api_key = NULL,
+        whaleAlert_api_key = NULL
+      )
     }
   })
 
-  output$progress_bar <- renderUI({
-    div(class = "progress-bar progress-bar-striped active",
-        style = paste0("width: ", progress_values(), "%;"),
-        paste0(round(progress_values()), "%")
-    )
+  # Update API key dropdowns based on available keys
+  observe({
+    gv <- global_variables()
+
+    # Update FRED choices
+    fred_choices <- c("None")
+    if (!is.null(gv$fred_api_key) && gv$fred_api_key != "") {
+      fred_choices <- c(fred_choices, "Use from global_variables")
+    }
+    updateSelectInput(session, "fred_key_select", choices = fred_choices)
+
+    # Update Whale Alert choices
+    whale_choices <- c("None")
+    if (!is.null(gv$whaleAlert_api_key) && gv$whaleAlert_api_key != "") {
+      whale_choices <- c(whale_choices, "Use from global_variables")
+    }
+    updateSelectInput(session, "whale_key_select", choices = whale_choices)
+
   })
 
-  output$progress_status <- renderText({
-    progress_message()
+  # API Status displays
+  output$fred_status <- renderText({
+    gv <- global_variables()
+    if (!is.null(gv$fred_api_key) && gv$fred_api_key != "") {
+      "✅ FRED API Key available"
+    } else {
+      "❌ FRED API Key not set"
+    }
+  })
+
+  output$whale_status <- renderText({
+    gv <- global_variables()
+    if (!is.null(gv$whaleAlert_api_key) && gv$whaleAlert_api_key != "") {
+      "✅ Whale Alert API Key available"
+    } else {
+      "❌ Whale Alert API Key not set"
+    }
   })
 
   # Run analysis when button is clicked
   observeEvent(input$run, {
 
-    # Reset and show progress
-    progress_values(0)
-    progress_message("Running analysis...")
+    output$status <- renderText("🔄 Running analysis...")
 
-    # Set API keys if provided
-    if (input$fred_key != "") {
-      assign("fred_api_key", input$fred_key, envir = .GlobalEnv)
+    # Set API keys from global_variables if selected
+    gv <- global_variables()
+
+    if (input$fred_key_select == "Use from global_variables" && !is.null(gv$fred_api_key)) {
+      assign("fred_api_key", gv$fred_api_key, envir = .GlobalEnv)
     }
-    if (input$whale_key != "") {
-      assign("whaleAlert_api_key", input$whale_key, envir = .GlobalEnv)
+
+    if (input$whale_key_select == "Use from global_variables" && !is.null(gv$whaleAlert_api_key)) {
+      assign("whaleAlert_api_key", gv$whaleAlert_api_key, envir = .GlobalEnv)
     }
 
     # Run framework
@@ -231,13 +276,10 @@ server <- function(input, output, session) {
       )
 
       results(res)
-      progress_values(100)
-      progress_message("Complete!")
       output$status <- renderText("✅ Analysis complete!")
 
     }, error = function(e) {
       output$status <- renderText(paste("❌ Error:", e$message))
-      progress_message("Failed")
     })
   })
 
@@ -748,7 +790,9 @@ server <- function(input, output, session) {
                                          ifelse(grepl("Outflows", pos$whale_flow), "lightgreen", "gray"))))
 
       # Get netflow data if available
-      netflow <- results()$raw_data$positioning$exchange_positioning$netflow_summary$netflow_usd / 1e6
+      netflow <- ifelse(!is.null(results()$raw_data$positioning),
+                        results()$raw_data$positioning$exchange_positioning$netflow_summary$netflow_usd / 1e6,
+                        0)
 
       ggplot() +
         annotate("rect", xmin = 0, xmax = 1, ymin = 0, ymax = 1,
