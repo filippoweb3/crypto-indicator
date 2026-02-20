@@ -1,7 +1,7 @@
 #' Comprehensive Crypto Predictive Framework
 #'
 #' @description
-#' The flagship function of the crypto indicators package. This framework integrates
+#' The flagship function of the CryptoIndicator package. This framework integrates
 #' on-chain, derivatives, macro, volatility, and positioning indicators into a
 #' coherent decision system that generates actionable signals across multiple
 #' time horizons (short-term, medium-term, long-term).
@@ -876,10 +876,23 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
 
 
 
-#' Print comprehensive crypto framework summary
+#' Print Comprehensive Crypto Framework Summary
 #'
-#' @param x The result object from crypto_predictive_framework()
-#' @return None, prints to console
+#' @description
+#' Displays a formatted, easy-to-understand summary of the crypto predictive framework
+#' results. The output is designed to be self-explanatory and shareable with team
+#' members, stakeholders, or anyone needing actionable crypto market insights.
+#'
+#' @param x A crypto_framework object returned by \code{\link{crypto_predictive_framework}}
+#'
+#' @return None. Prints formatted summary to console.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' result <- crypto_predictive_framework()
+#' print_crypto_summary(result)
+#' }
 print_crypto_summary <- function(x) {
 
   # Helper function to safely format dates
@@ -888,7 +901,6 @@ print_crypto_summary <- function(x) {
       if (inherits(date_val, "Date")) {
         format(date_val, "%Y-%m-%d")
       } else if (is.character(date_val)) {
-        # Try to convert character to Date
         date_val <- as.Date(date_val)
         format(date_val, "%Y-%m-%d")
       } else {
@@ -917,6 +929,11 @@ print_crypto_summary <- function(x) {
     })
   }
 
+  # Helper function to add explanatory notes
+  add_explanation <- function(text, explanation) {
+    cat("  📝 ", explanation, "\n")
+  }
+
   cat("\n")
   cat(paste(rep("=", 80), collapse = ""), "\n")
   cat("🚀 CRYPTO PREDICTIVE FRAMEWORK - COMPREHENSIVE SUMMARY\n")
@@ -930,7 +947,6 @@ print_crypto_summary <- function(x) {
   start_date <- safe_extract(x, c("metadata", "start_date"), "2015-01-01")
   end_date <- safe_extract(x, c("metadata", "end_date"), safe_format_date(Sys.Date()))
   cat("Data Range:", start_date, "to", end_date, "\n")
-
   cat("Status:", toupper(safe_extract(x, c("metadata", "status"), "unknown")), "\n")
 
   # Warnings
@@ -948,7 +964,7 @@ print_crypto_summary <- function(x) {
   if (x$metadata$status == "success") {
 
     #-------------------------------------------------------------------------
-    # RISK-OFF SIGNAL
+    # RISK-OFF SIGNAL (Most Important - Shown First)
     #-------------------------------------------------------------------------
     cat("\n", paste(rep("━", 80), collapse = ""), "\n")
     risk_color <- safe_extract(x, c("decisions", "risk_off", "color"), "UNKNOWN")
@@ -958,9 +974,25 @@ print_crypto_summary <- function(x) {
     cat(risk_emoji, " RISK-OFF SIGNAL: [", risk_color, "] ", risk_emoji, "\n")
     cat(paste(rep("━", 80), collapse = ""), "\n")
 
+    # Explanation of risk levels
+    cat("  What this means:\n")
+    if (risk_color == "GREEN") {
+      cat("  • ✅ Normal market conditions - no unusual risks detected\n")
+      cat("  • 📈 Full position sizes appropriate\n")
+      cat("  • 🛡️ Standard stop losses recommended\n")
+    } else if (risk_color == "YELLOW") {
+      cat("  • ⚠️ Elevated risk factors present\n")
+      cat("  • 📉 Consider reducing leverage and tightening stops\n")
+      cat("  • 💰 Take partial profits to reduce exposure\n")
+    } else if (risk_color == "RED") {
+      cat("  • 🔴 HIGH RISK - Market stress detected\n")
+      cat("  • 💵 Consider moving to stablecoins\n")
+      cat("  • 🚫 Avoid new positions, close leveraged trades\n")
+    }
+
+    cat("\nRisk Factors:\n")
     risk_factors <- x$decisions$risk_off$factors
     if (length(risk_factors) > 0 && !is.null(risk_factors)) {
-      cat("Risk Factors:\n")
       for (factor in risk_factors) cat("  •", factor, "\n")
     } else {
       cat("  • No significant risk factors detected\n")
@@ -973,11 +1005,13 @@ print_crypto_summary <- function(x) {
     }
 
     #-------------------------------------------------------------------------
-    # ON-CHAIN INDICATORS
+    # ON-CHAIN INDICATORS (Fundamental Valuation)
     #-------------------------------------------------------------------------
     cat("\n", paste(rep("━", 80), collapse = ""), "\n")
     cat("⛓️  ON-CHAIN INDICATORS\n")
     cat(paste(rep("━", 80), collapse = ""), "\n")
+    cat("  These metrics analyze blockchain data to determine if Bitcoin is\n")
+    cat("  undervalued or overvalued based on network activity and miner behavior.\n\n")
 
     if (!is.null(x$signals$onchain)) {
       oc <- x$signals$onchain
@@ -989,6 +1023,7 @@ print_crypto_summary <- function(x) {
         cat(mvrv_emoji, " MVRV Ratio: ", safe_extract(oc, c("mvrv", "value")),
             " [", safe_extract(oc, c("mvrv", "regime")), "]\n", sep = "")
         cat("     Signal: ", safe_extract(oc, c("mvrv", "signal")), "\n")
+        add_explanation("MVRV", "Compares current price to average purchase price of all coins. <0.7 = extreme bottom, >1.75 = extreme top.")
       }
 
       # NVT
@@ -997,6 +1032,7 @@ print_crypto_summary <- function(x) {
                             ifelse(oc$nvt$regime == "Overvalued", "🔴", "🟡"))
         cat(nvt_emoji, " NVT Ratio: ", safe_extract(oc, c("nvt", "value")),
             " [", safe_extract(oc, c("nvt", "regime")), "]\n", sep = "")
+        add_explanation("NVT", "Like P/E ratio for stocks. Low = network usage high relative to value, High = value exceeds network usage.")
       }
 
       # Puell Multiple
@@ -1005,6 +1041,7 @@ print_crypto_summary <- function(x) {
                               ifelse(grepl("Selling", oc$puell$regime), "🔴", "🟡"))
         cat(puell_emoji, " Puell Multiple: ", safe_extract(oc, c("puell", "value")),
             " [", safe_extract(oc, c("puell", "regime")), "]\n", sep = "")
+        add_explanation("Puell", "Measures miner profitability. Low = miners selling at a loss (capitulation), High = miners exceptionally profitable (selling pressure).")
       }
 
       # Composite
@@ -1012,15 +1049,18 @@ print_crypto_summary <- function(x) {
         composite_emoji <- ifelse(oc$composite == "Strong Buy", "🟢🟢",
                                   ifelse(oc$composite == "Strong Sell", "🔴🔴", "🟡"))
         cat(composite_emoji, " Composite Signal: ", oc$composite, "\n")
+        add_explanation("Composite", "Combines MVRV and Puell for higher conviction signals.")
       }
     }
 
     #-------------------------------------------------------------------------
-    # DERIVATIVES INDICATORS
+    # DERIVATIVES INDICATORS (Market Positioning)
     #-------------------------------------------------------------------------
     cat("\n", paste(rep("━", 80), collapse = ""), "\n")
     cat("📈 DERIVATIVES INDICATORS\n")
     cat(paste(rep("━", 80), collapse = ""), "\n")
+    cat("  These metrics show how traders are positioned in the futures market,\n")
+    cat("  revealing leverage extremes and potential crowded trades.\n\n")
 
     if (!is.null(x$signals$derivatives)) {
       d <- x$signals$derivatives
@@ -1028,22 +1068,31 @@ print_crypto_summary <- function(x) {
       funding_emoji <- ifelse(d$funding_regime %in% c("Bullish", "Neutral"), "🟢",
                               ifelse(d$funding_regime %in% c("Bearish"), "🟡", "🔴"))
       cat(funding_emoji, " Funding Regime: ", safe_extract(d, "funding_regime"), "\n")
+      add_explanation("Funding", "Shows who's paying whom to keep positions open. Positive = longs pay shorts (bullish sentiment). Extreme values signal crowded trades.")
 
-      cat("  • OI Percentile: ", sprintf("%.1f%%", as.numeric(d$oi_percentile) * 100), "\n")
-      cat("  • Funding Percentile: ", sprintf("%.1f%%", as.numeric(d$funding_percentile) * 100), "\n")
+      cat("  • OI Percentile: ", sprintf("%.1f%%", as.numeric(d$oi_percentile) * 100),
+          " - % of time open interest has been lower than current\n")
+      cat("  • Funding Percentile: ", sprintf("%.1f%%", as.numeric(d$funding_percentile) * 100),
+          " - % of time funding has been lower than current\n")
 
-      if (!is.null(d$crowded_long) && d$crowded_long) cat("  ⚠️  Crowded Long Positioning - Reversal Risk\n")
-      if (!is.null(d$crowded_short) && d$crowded_short) cat("  ⚠️  Crowded Short Positioning - Bounce Risk\n")
+      if (!is.null(d$crowded_long) && d$crowded_long) {
+        cat("  ⚠️  CROWDED LONG - Extreme long positioning, vulnerable to liquidation cascade\n")
+      }
+      if (!is.null(d$crowded_short) && d$crowded_short) {
+        cat("  ⚠️  CROWDED SHORT - Extreme short positioning, primed for short squeeze\n")
+      }
 
       cat("  • Interpretation: ", safe_extract(d, "interpretation"), "\n")
     }
 
     #-------------------------------------------------------------------------
-    # MACRO INDICATORS
+    # MACRO INDICATORS (Global Economic Context)
     #-------------------------------------------------------------------------
     cat("\n", paste(rep("━", 80), collapse = ""), "\n")
     cat("🌎 MACRO INDICATORS\n")
     cat(paste(rep("━", 80), collapse = ""), "\n")
+    cat("  These indicators show the broader economic environment that historically\n")
+    cat("  influences crypto markets (liquidity, interest rates, dollar strength).\n\n")
 
     if (!is.null(x$signals$macro)) {
       m <- x$signals$macro
@@ -1051,25 +1100,30 @@ print_crypto_summary <- function(x) {
       liq_emoji <- ifelse(m$liquidity_regime == "Expanding", "🟢",
                           ifelse(m$liquidity_regime == "Contracting", "🔴", "🟡"))
       cat(liq_emoji, " Liquidity: ", safe_extract(m, "liquidity_regime"), "\n")
+      add_explanation("Liquidity", "Money supply growth. Expanding (>5% YoY) = bullish for crypto, Contracting (<0%) = bearish.")
 
       rate_emoji <- ifelse(grepl("Low Rates", m$rate_regime), "🟢",
                            ifelse(grepl("High Rates", m$rate_regime), "🔴", "🟡"))
       cat(rate_emoji, " Rates: ", safe_extract(m, "rate_regime"), "\n")
+      add_explanation("Rates", "10-year Treasury yield. Low rates (<1%) = risk-on, High rates (>3%) = risk-off (competes with crypto).")
 
       dollar_emoji <- ifelse(grepl("Weak Dollar", m$dollar_regime), "🟢",
                              ifelse(grepl("Strong Dollar", m$dollar_regime), "🔴", "🟡"))
       cat(dollar_emoji, " Dollar: ", safe_extract(m, "dollar_regime"), "\n")
+      add_explanation("Dollar", "DXY index. Weak dollar (<90) = bullish for crypto, Strong dollar (>100) = bearish.")
 
-      cat("\n  • Composite Risk Score: ", safe_extract(m, "composite_risk"), "\n")
+      cat("\n  • Composite Risk Score: ", safe_extract(m, "composite_risk"),
+          " (Scale -1 to +1, higher = more bullish)\n")
       cat("  • Overall Bias: ", safe_extract(m, "risk_bias"), "\n")
     }
 
     #-------------------------------------------------------------------------
-    # VOLATILITY INDICATORS
+    # VOLATILITY INDICATORS (Market Conditions)
     #-------------------------------------------------------------------------
     cat("\n", paste(rep("━", 80), collapse = ""), "\n")
     cat("📊 VOLATILITY INDICATORS\n")
     cat(paste(rep("━", 80), collapse = ""), "\n")
+    cat("  Volatility regimes determine which trading strategies work best.\n\n")
 
     if (!is.null(x$signals$volatility)) {
       v <- x$signals$volatility
@@ -1078,18 +1132,24 @@ print_crypto_summary <- function(x) {
                           ifelse(grepl("High", v$regime), "🟡", "🔴"))
       cat(vol_emoji, " Volatility Regime: ", safe_extract(v, "regime"), "\n")
       cat("  • Current Environment: ", safe_extract(v, "current_regime"), "\n")
-      cat("  • Strategy Setup: ", safe_extract(v, "strategy"), "\n")
-      cat("  • Percentile (7d): ", sprintf("%.1f%%", as.numeric(v$percentile_short) * 100), "\n")
-      cat("  • Percentile (30d): ", sprintf("%.1f%%", as.numeric(v$percentile_medium) * 100), "\n")
+      cat("  • Best Strategy: ", safe_extract(v, "strategy"), "\n")
+      cat("  • Volatility vs History (7d): ", sprintf("%.1f%%", as.numeric(v$percentile_short) * 100),
+          " - ", ifelse(as.numeric(v$percentile_short) > 0.8, "High",
+                        ifelse(as.numeric(v$percentile_short) < 0.2, "Low", "Normal")), "\n")
+      cat("  • Volatility vs History (30d): ", sprintf("%.1f%%", as.numeric(v$percentile_medium) * 100),
+          " - ", ifelse(as.numeric(v$percentile_medium) > 0.8, "High",
+                        ifelse(as.numeric(v$percentile_medium) < 0.2, "Low", "Normal")), "\n")
     }
 
     #-------------------------------------------------------------------------
-    # POSITIONING INDICATORS
+    # POSITIONING INDICATORS (Whales & Retail)
     #-------------------------------------------------------------------------
     if (!is.null(x$signals$positioning)) {
       cat("\n", paste(rep("━", 80), collapse = ""), "\n")
       cat("🐋 POSITIONING & SENTIMENT\n")
       cat(paste(rep("━", 80), collapse = ""), "\n")
+      cat("  Whale transactions show what 'smart money' is doing.\n")
+      cat("  Google Trends shows retail interest (contrarian indicator at extremes).\n\n")
 
       p <- x$signals$positioning
 
@@ -1097,6 +1157,7 @@ print_crypto_summary <- function(x) {
         whale_emoji <- ifelse(grepl("Accumulation|Bullish", p$whale_flow), "🟢",
                               ifelse(grepl("Selling|Bearish", p$whale_flow), "🔴", "🟡"))
         cat(whale_emoji, " Whale Flow: ", safe_extract(p, "whale_flow"), "\n")
+        add_explanation("Whale Flow", "Inflows = whales sending to exchanges (potential selling). Outflows = whales moving to cold storage (accumulation).")
         cat("  • Interpretation: ", safe_extract(p, "whale_interpretation"), "\n")
         cat("  • Activity: ", safe_extract(p, "whale_activity"), "\n")
       }
@@ -1106,6 +1167,7 @@ print_crypto_summary <- function(x) {
                              ifelse(grepl("Extreme Interest", p$sentiment$signal), "🔴", "🟡"))
         cat(sent_emoji, " Google Trends: ", safe_extract(p, c("sentiment", "score")),
             " [", safe_extract(p, c("sentiment", "signal")), "]\n", sep = "")
+        add_explanation("Google Trends", "Retail interest. <20 = apathy (potential bottom), >80 = euphoria (potential top).")
       }
     }
 
@@ -1115,6 +1177,7 @@ print_crypto_summary <- function(x) {
     cat("\n", paste(rep("━", 80), collapse = ""), "\n")
     cat("⏱️  DECISION FRAMEWORK BY TIME HORIZON\n")
     cat(paste(rep("━", 80), collapse = ""), "\n")
+    cat("  Different strategies for different timeframes based on current signals.\n\n")
 
     # Short-term
     if (!is.null(x$decisions$short_term)) {
@@ -1123,11 +1186,12 @@ print_crypto_summary <- function(x) {
       st_emoji <- ifelse(grepl("Long", st_signal), "🟢",
                          ifelse(grepl("Short", st_signal), "🔴", "🟡"))
       cat(st_emoji, " SHORT-TERM (Hours to Days):\n")
-      cat("  • Momentum: ", st_signal,
-          " (Score: ", safe_extract(st, c("momentum", "score"), "0"), ")\n", sep = "")
+      cat("  • Momentum Signal: ", st_signal, " (Score: ", safe_extract(st, c("momentum", "score"), "0"), "/4)\n", sep = "")
+      add_explanation("Momentum Score", "Combines funding rates (derivatives) with recent price action. Higher = more bullish.")
 
       if (!is.null(st$mean_reversion) && !is.null(st$mean_reversion$active) && st$mean_reversion$active) {
-        cat("  • Mean Reversion: ", safe_extract(st, c("mean_reversion", "direction"), "Neutral"), "\n")
+        cat("  • Mean Reversion Setup: ", safe_extract(st, c("mean_reversion", "direction"), "Neutral"), "\n")
+        add_explanation("Mean Reversion", "Volatility compression suggests range-bound trading - fade the moves.")
       }
     }
 
@@ -1138,11 +1202,30 @@ print_crypto_summary <- function(x) {
       mt_emoji <- ifelse(grepl("Bull", mt_signal), "🟢",
                          ifelse(grepl("Bear", mt_signal), "🔴", "🟡"))
       cat("\n", mt_emoji, " MEDIUM-TERM (Weeks to Months):\n", sep = "")
-      cat("  • Trend: ", mt_signal,
-          " (Score: ", safe_extract(mt, c("trend", "score"), "0"), ")\n", sep = "")
+      cat("  • Trend Signal: ", mt_signal, " (Score: ", safe_extract(mt, c("trend", "score"), "0"), "/4)\n", sep = "")
+      add_explanation("Trend Score", "Combines on-chain valuation (MVRV) with macro conditions. Higher = stronger bull trend.")
+
       cat("  • Valuation: ", safe_extract(mt, c("valuation", "composite"), "Neutral"), "\n")
-      cat("  • Recommended Allocation: ", safe_extract(mt, c("position_sizing", "recommended_allocation_pct"), "50"), "%\n")
-      cat("  • Risk per Trade: ", safe_extract(mt, c("position_sizing", "risk_per_trade_pct"), "1.5"), "%\n")
+
+      # EXPLANATION OF ALLOCATION PERCENTAGES
+      alloc_pct <- safe_extract(mt, c("position_sizing", "recommended_allocation_pct"), "50")
+      cat("  • Recommended Allocation: ", alloc_pct, "% of capital for this timeframe\n")
+
+      if (as.numeric(alloc_pct) >= 75) {
+        add_explanation("High Allocation", "Strong conviction - can use full position sizes")
+      } else if (as.numeric(alloc_pct) >= 65) {
+        add_explanation("Moderate-High Allocation", "Good conviction - near full positions")
+      } else if (as.numeric(alloc_pct) >= 50) {
+        add_explanation("Moderate Allocation", "Balanced - half-sized positions")
+      } else if (as.numeric(alloc_pct) >= 35) {
+        add_explanation("Low-Moderate Allocation", "Reduced exposure - one-third positions")
+      } else {
+        add_explanation("Low Allocation", "Minimal exposure - mostly cash")
+      }
+
+      risk_pct <- safe_extract(mt, c("position_sizing", "risk_per_trade_pct"), "1.5")
+      cat("  • Risk per Trade: ", risk_pct, "% of account per trade\n")
+      add_explanation("Risk per Trade", "How much of your account to risk on any single trade. Lower in high conviction? No - actually lower when allocation is high to manage overall risk.")
     }
 
     # Long-term
@@ -1153,17 +1236,21 @@ print_crypto_summary <- function(x) {
                          ifelse(grepl("Reduce", lt_signal), "🔴", "🟡"))
       cat("\n", lt_emoji, " LONG-TERM (Months to Years):\n", sep = "")
       cat("  • Strategic: ", lt_signal, "\n")
+      add_explanation("Strategic", "Long-term positioning based on multi-year cycle analysis.")
+
       cat("  • Cycle: ", safe_extract(lt, c("cycle", "interpretation"), "Mid-cycle"), "\n")
       cat("  • Halving: ", safe_extract(lt, c("halving", "phase"), "Unknown"), "\n")
+      add_explanation("Halving", "Bitcoin's 4-year supply cut cycle. Post-halving years historically strongest.")
     }
 
     #-------------------------------------------------------------------------
-    # REGIME ALLOCATION
+    # REGIME ALLOCATION (Current Market Type)
     #-------------------------------------------------------------------------
     if (!is.null(x$decisions$regime_allocation)) {
       cat("\n", paste(rep("━", 80), collapse = ""), "\n")
       cat("🎯 REGIME ALLOCATION\n")
       cat(paste(rep("━", 80), collapse = ""), "\n")
+      cat("  The overall market regime determines the appropriate playbook.\n\n")
 
       regime <- x$decisions$regime_allocation
       regime_current <- safe_extract(regime, "current_regime", "Neutral")
@@ -1178,18 +1265,62 @@ print_crypto_summary <- function(x) {
 
       if (!is.null(regime$allocation)) {
         cat("Recommended Positioning:\n")
-        cat("  • Strategic: ", safe_extract(regime, c("allocation", "strategic"), "50%"), "\n")
-        cat("  • Tactical: ", safe_extract(regime, c("allocation", "tactical"), "Balanced"), "\n")
-        cat("  • Hedges: ", safe_extract(regime, c("allocation", "hedges"), "Standard"), "\n")
+
+        # EXPLANATION OF STRATEGIC ALLOCATION PERCENTAGES
+        strategic <- safe_extract(regime, c("allocation", "strategic"), "50%")
+        cat("  • Strategic Allocation: ", strategic, " of long-term portfolio\n")
+
+        if (grepl("75-100%", strategic)) {
+          add_explanation("Strategic", "Bull market - fully invested, ride the trend")
+        } else if (grepl("50-75%", strategic)) {
+          add_explanation("Strategic", "Accumulation zone - building position gradually")
+        } else if (grepl("25-50%", strategic)) {
+          add_explanation("Strategic", "Bear market - defensive, mostly cash")
+        } else if (grepl("<25%", strategic)) {
+          add_explanation("Strategic", "Distribution zone - taking profits, minimal exposure")
+        } else if (grepl("50%", strategic)) {
+          add_explanation("Strategic", "Neutral - balanced, waiting for clearer signals")
+        }
+
+        tactical <- safe_extract(regime, c("allocation", "tactical"), "Balanced")
+        cat("  • Tactical Approach: ", tactical, "\n")
+
+        if (tactical == "Trend following") {
+          add_explanation("Tactical", "Buy dips, hold through volatility, let profits run")
+        } else if (tactical == "Mean reversion") {
+          add_explanation("Tactical", "Sell rallies, buy dips, range-bound trading")
+        } else if (tactical == "Scale in") {
+          add_explanation("Tactical", "DCA into positions, don't chase")
+        } else if (tactical == "Take profits") {
+          add_explanation("Tactical", "Reduce size on strength, move to cash")
+        } else {
+          add_explanation("Tactical", "Balanced approach - mix of strategies")
+        }
+
+        hedges <- safe_extract(regime, c("allocation", "hedges"), "Standard")
+        cat("  • Hedges: ", hedges, "\n")
+
+        if (hedges == "Minimal") {
+          add_explanation("Hedges", "No hedging needed in strong bull trend")
+        } else if (hedges == "Consider hedges") {
+          add_explanation("Hedges", "Look at inverse products or options for protection")
+        } else if (hedges == "Light") {
+          add_explanation("Hedges", "Small hedge positions during accumulation")
+        } else if (hedges == "Increase") {
+          add_explanation("Hedges", "Add hedges to protect profits")
+        } else {
+          add_explanation("Hedges", "Standard portfolio hedges")
+        }
       }
     }
 
     #-------------------------------------------------------------------------
-    # ACTIONABLE SUMMARY
+    # ACTIONABLE SUMMARY (Bottom Line)
     #-------------------------------------------------------------------------
     cat("\n", paste(rep("━", 80), collapse = ""), "\n")
     cat("✅ ACTIONABLE SUMMARY\n")
     cat(paste(rep("━", 80), collapse = ""), "\n")
+    cat("  Bottom-line recommendations based on all indicators:\n\n")
 
     if (!is.null(x$summary$bullet_points)) {
       for (bullet in x$summary$bullet_points) {
@@ -1210,6 +1341,13 @@ print_crypto_summary <- function(x) {
         safe_extract(x, c("decisions", "long_term", "strategic", "core_position"), "Maintain"),
         safe_extract(x, c("decisions", "risk_off", "color"), "UNKNOWN"),
         safe_extract(x, c("decisions", "regime_allocation", "current_regime"), "Neutral")
+      ),
+      Meaning = c(
+        "Days timeframe - momentum trading",
+        "Weeks to months - trend following",
+        "Years - strategic positioning",
+        "Current market risk level",
+        "Overall market regime"
       ),
       stringsAsFactors = FALSE
     )
