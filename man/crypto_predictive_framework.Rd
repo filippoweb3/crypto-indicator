@@ -13,20 +13,303 @@ crypto_predictive_framework(
 )
 }
 \arguments{
-\item{assets}{Character vector of assets (default: c("Bitcoin"))}
+\item{assets}{Character vector of cryptocurrency names to analyze.
+Default \code{c("Bitcoin")}. Currently optimized for Bitcoin, but extensible
+to other assets that have sufficient data.}
 
-\item{start_date}{Start date for historical data (default: "2015-01-01")}
+\item{start_date}{Start date for historical data in "YYYY-MM-DD" format.
+Default \code{"2015-01-01"} provides a full market cycle of data.}
 
-\item{fred_api_key}{FRED API key for macro data (optional)}
+\item{fred_api_key}{Character string containing your FRED API key.
+Default \code{NULL}. If provided, will be stored in global environment.
+Register at \url{https://fred.stlouisfed.org/docs/api/api_key.html}}
 
-\item{whale_api_key}{Whale Alert API key for whale transactions (optional)}
+\item{whale_api_key}{Character string containing your Whale Alert API key.
+Default \code{NULL}. If provided, will be stored in global environment.
+Register at \url{https://whale-alert.io/api}}
 
-\item{include_google_trends}{Boolean to include Google Trends sentiment (default: FALSE)}
+\item{include_google_trends}{Logical. If \code{TRUE}, fetches Google Trends
+data for retail sentiment analysis. Default \code{TRUE}.}
 }
 \value{
-List containing comprehensive framework with signals by time horizon
+A list object of class \code{crypto_framework} containing seven
+  main sections:
+
+  \strong{1. Metadata:}
+  \itemize{
+    \item \code{timestamp}: When the analysis was run
+    \item \code{assets}: Assets analyzed
+    \item \code{start_date}/\code{end_date}: Data range
+    \item \code{status}: "success", "pending", or "failed"
+    \item \code{warning_count}/\code{error_count}: Issue tracking
+  }
+
+  \strong{2. Raw Data:}
+  \itemize{
+    \item \code{market}: Output from \code{\link{get_market_data}}
+    \item \code{derivatives}: Output from \code{\link{get_derivatives}}
+    \item \code{macro}: Output from \code{\link{get_macro}}
+    \item \code{positioning}: Output from \code{\link{get_positioning}} (if requested)
+  }
+
+  \strong{3. Indicators:}
+  \itemize{
+    \item \code{onchain}: Output from \code{\link{get_onchain_indicators}}
+    \item \code{volatility}: Output from \code{\link{get_volatility}}
+  }
+
+  \strong{4. Signals:} Latest values from each indicator category
+  \itemize{
+    \item \code{onchain}: MVRV, NVT, Puell, composite signal
+    \item \code{derivatives}: Funding regime, crowded trades, percentiles
+    \item \code{macro}: Liquidity, rates, dollar, composite risk
+    \item \code{volatility}: Regime, strategy setup, percentiles
+    \item \code{positioning}: Whale flows, sentiment (if available)
+  }
+
+  \strong{5. Decisions:} Framework outputs by time horizon
+  \itemize{
+    \item \code{short_term}: Momentum score and mean reversion signals
+    \item \code{medium_term}: Trend score, valuation, position sizing
+    \item \code{long_term}: Cycle positioning, halving impact, strategic allocation
+    \item \code{risk_off}: Current risk level (GREEN/YELLOW/RED) with actions
+    \item \code{regime_allocation}: Market regime with specific positioning
+  }
+
+  \strong{6. Summary:} Actionable bullet points and quick reference
 }
 \description{
-A single function that combines on-chain, derivatives, macro, volatility, and positioning
-indicators into actionable signals across different time horizons.
+The flagship function of the crypto indicators package. This framework integrates
+on-chain, derivatives, macro, volatility, and positioning indicators into a
+coherent decision system that generates actionable signals across multiple
+time horizons (short-term, medium-term, long-term).
+}
+\details{
+\strong{Framework Architecture}
+
+The framework processes data through five specialized modules, each capturing
+a different aspect of market dynamics:
+
+\describe{
+  \item{\strong{On-Chain Module}}{Uses \code{\link{get_onchain_indicators}} to
+    assess fundamental valuation via MVRV, network activity via NVT, and miner
+    behavior via Puell Multiple. These indicators identify cycle extremes and
+    accumulation/distribution zones.}
+
+  \item{\strong{Derivatives Module}}{Uses \code{\link{get_derivatives}} to
+    analyze market positioning via open interest, leverage dynamics via funding
+    rates, and crowd behavior via long/short ratios. Identifies crowded trades
+    and potential reversal points.}
+
+  \item{\strong{Macro Module}}{Uses \code{\link{get_macro}} to capture global
+    liquidity (M2), interest rates, and dollar strength. These factors drive
+    the broader risk environment for crypto assets.}
+
+  \item{\strong{Volatility Module}}{Uses \code{\link{get_volatility}} to
+    identify optimal trading strategies based on market conditions—
+    trend following in low vol, mean reversion in high vol.}
+
+  \item{\strong{Positioning Module}}{Uses \code{\link{get_positioning}} to
+    track whale movements (smart money) and retail sentiment (Google Trends)
+    as contrarian indicators at extremes.}
+}
+
+\strong{Decision Framework Methodology}
+
+\emph{Short-Term (Hours to Days)}
+\itemize{
+  \item Combines derivatives positioning (funding regime) with recent price momentum
+  \item Momentum score range: -4 to +4
+  \item Signals: Strong Long (+2 to +4), Long (+1), Neutral (0), Short (-1), Strong Short (-2 to -4)
+  \item Volatility regime determines if mean reversion setups are active
+}
+
+\emph{Medium-Term (Weeks to Months)}
+\itemize{
+  \item On-chain valuation (MVRV) contributes up to ±2 points
+  \item Macro composite risk contributes up to ±2 points (scaled)
+  \item Trend score range: -4 to +4
+  \item Position sizing scales with conviction (25-75% allocation)
+  \item Risk per trade adjusts based on allocation (1.0-1.5%)
+}
+
+\emph{Long-Term (Months to Years)}
+\itemize{
+  \item Cycle positioning based on MVRV regimes (Extreme Bottom → Accumulation)
+  \item Halving cycle phase (pre-halving, post-halving, mid-cycle)
+  \item Strategic guidance: Accumulate, Maintain, or Reduce core position
+}
+
+\strong{Risk-Off Framework}
+
+Three-tier risk system that overrides other signals during dangerous conditions:
+
+\describe{
+  \item{\strong{GREEN} (Low Risk)}{
+    \itemize{
+      \item Conditions: Volatility normal, macro positive, no crowded trades
+      \item Actions: Maintain full positions, normal stop losses
+    }
+  }
+  \item{\strong{YELLOW} (Medium Risk)}{
+    \itemize{
+      \item Conditions: Elevated volatility OR negative macro OR crowded longs
+      \item Actions: Reduce leverage, tighten stops, take partial profits
+    }
+  }
+  \item{\strong{RED} (High Risk)}{
+    \itemize{
+      \item Conditions: Extreme volatility (>1sd) OR severe macro headwinds (< -0.5)
+      \item Actions: Move to stablecoins, close leveraged positions, wait
+    }
+  }
+}
+
+\strong{Regime Allocation}
+
+The framework classifies the current market into one of five regimes:
+
+\describe{
+  \item{\strong{Bull}}{Expanding liquidity + bull market MVRV}
+  \itemize{
+    \item Strategic: 75-100% allocation
+    \item Tactical: Trend following
+    \item Hedges: Minimal
+  }
+  \item{\strong{Bear}}{Contracting liquidity + bear market MVRV}
+  \itemize{
+    \item Strategic: 25-50% allocation
+    \item Tactical: Mean reversion
+    \item Hedges: Consider hedges
+  }
+  \item{\strong{Accumulation}}{Extreme bottom MVRV}
+  \itemize{
+    \item Strategic: 50-75% DCA
+    \item Tactical: Scale in
+    \item Hedges: Light
+  }
+  \item{\strong{Distribution}}{Extreme top MVRV}
+  \itemize{
+    \item Strategic: <25% allocation
+    \item Tactical: Take profits
+    \item Hedges: Increase
+  }
+  \item{\strong{Neutral}}{Mixed signals}
+  \itemize{
+    \item Strategic: 50% allocation
+    \item Tactical: Balanced
+    \item Hedges: Standard
+  }
+}
+}
+\note{
+\itemize{
+  \item The framework is optimized for Bitcoin but can analyze other assets
+    with sufficient data (on-chain metrics like Puell are Bitcoin-specific)
+  \item API keys are stored in the global environment; manage them carefully
+  \item First run may be slow due to data caching and multiple API calls
+  \item Internet connection required for all data sources
+  \item Some indicators (e.g., Puell Multiple) are Bitcoin-specific
+}
+}
+\section{Expected Output}{
+
+When you run the framework, you'll see progress messages:
+\preformatted{
+📊 Collecting market data...
+  ✅ Retrieved 3287 days of data
+⛓️  Calculating on-chain indicators...
+  ✅ MVRV: Bear Market
+📈 Fetching derivatives data...
+  Ticker: BTCUSDT
+  ✅ Funding regime: Neutral
+🌎 Fetching macro indicators...
+  ✅ Liquidity: Stable
+📊 Calculating volatility metrics...
+  ✅ Volatility regime: Low
+🐋 Fetching whale and sentiment data...
+  ✅ Whale flow: Net Outflows (Bullish Bias)
+🎯 Generating decision framework...
+
+✅ Framework complete! Use print_crypto_summary() to view results
+}
+}
+
+\section{Error Handling}{
+
+The framework is designed to be resilient:
+\itemize{
+  \item If market data fails, the framework returns early with status "failed"
+  \item Other modules that fail generate warnings but don't stop execution
+  \item Missing data results in \code{NULL} values with appropriate warnings
+  \item API failures are caught and logged as warnings, not errors
+}
+}
+
+\examples{
+\dontrun{
+# Basic usage (Bitcoin only)
+result <- crypto_predictive_framework()
+
+# View summary
+print_crypto_summary(result)
+
+# With all data sources
+result <- crypto_predictive_framework(
+  assets = c("Bitcoin"),
+  start_date = "2015-01-01",
+  fred_api_key = "your_fred_key",
+  whale_api_key = "your_whale_key",
+  include_google_trends = TRUE
+)
+
+# Access specific components
+result$signals$onchain$mvrv$regime        # Current MVRV regime
+result$decisions$risk_off$color           # Risk level (GREEN/YELLOW/RED)
+result$decisions$regime_allocation$allocation$strategic  # Recommended allocation
+
+# Extract for custom reporting
+report_data <- data.frame(
+  date = Sys.Date(),
+  mvrv = result$signals$onchain$mvrv$value,
+  mvrv_regime = result$signals$onchain$mvrv$regime,
+  risk_level = result$decisions$risk_off$color,
+  allocation = result$decisions$regime_allocation$allocation$strategic
+)
+
+# Run for Ethereum (limited on-chain metrics)
+eth_result <- crypto_predictive_framework(
+  assets = c("Ethereum"),
+  start_date = "2017-01-01"
+)
+
+# Compare multiple timeframes
+cat("Short-term:", result$decisions$short_term$momentum$signal, "\n")
+cat("Medium-term:", result$decisions$medium_term$trend$direction, "\n")
+cat("Long-term:", result$decisions$long_term$strategic$core_position, "\n")
+}
+
+}
+\references{
+\itemize{
+  \item Woo, W. (2019). "On-Chain Indicators for Bitcoin Valuation"
+  \item Puell, D. (2019). "The Puell Multiple: A Bitcoin Mining Indicator"
+  \item Checkmate (2020). "The Bitcoin On-Chain Market Cycle Guide"
+  \item Binance Exchange (2024). "Perpetual Futures Guide"
+  \item Federal Reserve Economic Data (FRED): \url{https://fred.stlouisfed.org/}
+}
+}
+\seealso{
+\itemize{
+  \item \code{\link{get_market_data}} for raw data acquisition
+  \item \code{\link{get_onchain_indicators}} for on-chain metrics
+  \item \code{\link{get_derivatives}} for derivatives analysis
+  \item \code{\link{get_macro}} for macroeconomic indicators
+  \item \code{\link{get_volatility}} for volatility regimes
+  \item \code{\link{get_positioning}} for whale and sentiment data
+  \item \code{\link{print_crypto_summary}} for formatted output
+}
+}
+\author{
+Filippo Franchini
 }

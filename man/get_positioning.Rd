@@ -285,5 +285,5 @@ ggplot(whale_history, aes(x = date)) +
 }
 }
 \author{
-Your Name
+Filippo Franchini
 }

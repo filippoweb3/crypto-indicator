@@ -231,5 +231,5 @@ macro_history <- function(start_date = "2020-01-01") {
 }
 }
 \author{
-Your Name
+Filippo Franchini
 }

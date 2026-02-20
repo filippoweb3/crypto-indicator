@@ -883,7 +883,7 @@ get_derivatives <- function(ticker = "BTCUSDT") {
 #'     Evidence from Wavelet Coherence Analysis
 #' }
 #'
-#' @author Your Name
+#' @author Filippo Franchini
 #' @export
 #'
 #' @importFrom dplyr lag full_join
@@ -1221,7 +1221,7 @@ get_macro <- function(fred_api_key = global_variables$fred_api_key, start_date =
 #'   \item CBOE (2023). VIX Index Rules of Construction
 #' }
 #'
-#' @author Your Name
+#' @author Filippo Franchini
 #' @export
 #'
 #' @importFrom TTR runSD
@@ -1552,7 +1552,7 @@ get_volatility <- function(data, windows = list(short = 7, medium = 30, long = 9
 #'     Behavior in Financial Markets Using Google Trends
 #' }
 #'
-#' @author Your Name
+#' @author Filippo Franchini
 #' @export
 #'
 #' @importFrom dplyr mutate summarise n case_when
