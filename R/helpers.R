@@ -89,6 +89,11 @@ get_market_data <- function(assets = c("Bitcoin"), start_date = "2015-01-01"){
 
   data <- crypto2::crypto_history(coin_list = coin_list, start_date = start_date)
 
+  # Add market_cap if missing (approximate)
+  if (!"market_cap" %in% names(data)) {
+    data$market_cap <- data$close * 19991700  # Approximate BTC supply (as per 20.02.2026)
+  }
+
   return(
     list(data = data,
          assets = assets,
@@ -174,10 +179,20 @@ get_market_data <- function(assets = c("Bitcoin"), start_date = "2015-01-01"){
 #' @importFrom dplyr filter slice_tail pull
 get_btc_issuance <- function(target_date) {
 
+  # Convert to Date if character
+  if (is.character(target_date)) {
+    target_date <- as.Date(target_date)
+  }
+
   halvings <- data.frame(
     date = as.Date(c("2009-01-03", "2012-11-28", "2016-07-09", "2020-05-11", "2024-04-20")),
     reward = c(50, 25, 12.5, 6.25, 3.125)
   )
+
+  # Handle dates before first halving
+  if (target_date < min(halvings$date)) {
+    return(0)
+  }
 
   current_reward <- halvings %>%
     filter(date <= target_date) %>%
@@ -352,18 +367,28 @@ get_onchain_indicators <- function(data){
       puell_multiple = issuance_usd/zoo::rollmean(issuance_usd, k = 365, fill = NA, align = "right"),
 
       # Signals
-      nvt_regime = ifelse(nvt > 70, "Overvalued",
-                          ifelse(nvt < 30, "Undervalued", "Neutral")),
-      mvrv_regime = ifelse(mvrv > 1.75, "Extreme Top",
-                           ifelse(mvrv < 0.7, "Extreme Bottom",
-                                  ifelse(mvrv < 0.9 & mvrv >= 0.7, "Bear Market", "Bull Market"))),
-      puell_signal = ifelse(puell_multiple > 2, "Miner Selling Pressure",
-                            ifelse(puell_multiple < 0.7, "Miner Capitulation", "Neutral")),
+      nvt_regime = dplyr::case_when(
+        nvt > 70 ~ "Overvalued",
+        nvt < 30 ~ "Undervalued",
+        TRUE ~ "Neutral"
+      ),
+      mvrv_regime = dplyr::case_when(
+        mvrv > 1.75 ~ "Extreme Top",
+        mvrv < 0.7 ~ "Extreme Bottom",
+        mvrv < 0.9 ~ "Bear Market",
+        TRUE ~ "Bull Market"
+      ),
+      puell_signal = dplyr::case_when(
+        puell_multiple > 2 ~ "Miner Selling Pressure",
+        puell_multiple < 0.7 ~ "Miner Capitulation",
+        TRUE ~ "Neutral"
+      ),
       regime_combi = case_when(
         mvrv_regime == "Extreme Bottom" & puell_signal == "Miner Capitulation" ~ "Strong Buy",
         mvrv_regime == "Extreme Top" & puell_signal == "Miner Selling Pressure" ~ "Strong Sell",
         TRUE ~ "Neutral")
-      )
+      ) %>%
+    dplyr::ungroup()
 
   return(data)
 
@@ -577,8 +602,8 @@ get_derivatives <- function(ticker = "BTCUSDT") {
   funding <- data.frame(date = as.Date(as.POSIXct(attributes(funding)$index)),
                         funding_rate = funding$funding_rate)
 
-  funding <- group_by(funding, date) %>%
-    summarise(
+  funding <- dplyr::group_by(funding, date) %>%
+    dplyr::summarise(
       avg_funding_rate = mean(funding_rate, na.rm = TRUE),
       max_funding_rate = max(funding_rate, na.rm = TRUE),
       .groups = "drop"
@@ -595,27 +620,38 @@ get_derivatives <- function(ticker = "BTCUSDT") {
     dplyr::full_join(ls_ratio, by = "date") %>%
     dplyr::arrange(date)
 
+  # Check if data is empty
+  if (nrow(derivatives_data) == 0) {
+    warning("No derivatives data returned for ", ticker)
+    return(list(data = derivatives_data,
+                oi_percentile = numeric(0),
+                funding_percentile = numeric(0),
+                signals = list()))
+  }
+
   oi_percentile <- rank(derivatives_data$open_interest, na.last = "keep") /
     sum(!is.na(derivatives_data$open_interest))
-  funding_percentile <- rank(derivatives_data$avg_funding_rate) / nrow(derivatives_data)
+  funding_percentile <- rank(derivatives_data$avg_funding_rate, na.last = "keep") /
+    sum(!is.na(derivatives_data$avg_funding_rate))
 
   # Signals
 
   signals <- list(
     # High OI with high funding suggests crowded long (potential reversal)
-    crowded_long = oi_percentile > 0.9 & funding_percentile > 0.9,
+    crowded_long = !is.na(oi_percentile) > 0.9 & !is.na(funding_percentile) > 0.9,
     # Low OI with negative funding suggests capitulation (potential bottom)
-    crowded_short = oi_percentile < 0.1 & funding_percentile < 0.1,
+    crowded_short = !is.na(oi_percentile) < 0.1 & !is.na(funding_percentile) < 0.1,
     # Open interest momentum
     oi_momentum = (derivatives_data$open_interest /
                      dplyr::lag(derivatives_data$open_interest, 7)) - 1,
     # Funding rate regime
-    funding_regime = case_when(
-      derivatives_data$avg_funding_rate*100 > 0.05 ~ "Extreme Long",
-      derivatives_data$avg_funding_rate*100 > 0.01 ~ "Bullish",
-      derivatives_data$avg_funding_rate*100 >= 0.00  ~ "Neutral",
-      derivatives_data$avg_funding_rate*100 > -0.01  ~ "Bearish",
-      derivatives_data$avg_funding_rate*100 <= -0.01  ~ "Extreme Short",
+    funding_regime = dplyr::case_when(
+      is.na(derivatives_data$avg_funding_rate) ~ NA_character_,
+      derivatives_data$avg_funding_rate * 100 > 0.05 ~ "Extreme Long",
+      derivatives_data$avg_funding_rate * 100 > 0.01 ~ "Bullish",
+      derivatives_data$avg_funding_rate * 100 >= 0.00 ~ "Neutral",
+      derivatives_data$avg_funding_rate * 100 > -0.01 ~ "Bearish",
+      derivatives_data$avg_funding_rate * 100 <= -0.01 ~ "Extreme Short",
       TRUE ~ "Unknown"
     )
   )
@@ -896,7 +932,7 @@ get_macro <- function(fred_api_key = global_variables$fred_api_key, start_date =
     observation_end = Sys.Date()
   )
 
-  aggregated <- full_join(treasury_10y, inflation_expect, by ="date")
+  aggregated <- dplyr::full_join(treasury_10y, inflation_expect, by ="date")
   aggregated <- aggregated[,c(1,3,7)]
   colnames(aggregated) <- c("date", "DGS10", "T5YIE")
   aggregated$real_rates <- aggregated$DGS10 - aggregated$T5YIE
@@ -906,12 +942,14 @@ get_macro <- function(fred_api_key = global_variables$fred_api_key, start_date =
     ifelse(tail(treasury_10y$value, 1) < 1, "Low Rates (Risk-On)", "Neutral")
   )
 
-  composite_risk_score = (
-    ifelse(tail(m2_yoy, 1) > 0.05, 1, ifelse(tail(m2_yoy, 1) < 0, -1, 0)) +
-      ifelse(tail(treasury_10y$value, 1) > 3, -1, ifelse(tail(treasury_10y$value, 1) < 1, 1, 0)) +
-      ifelse(!is.null(dxy) && tail(quantmod::Cl(dxy), 1) > 100, -1,
-             ifelse(!is.null(dxy) && tail(quantmod::Cl(dxy), 1) < 90, 1, 0))
-  ) / 3
+  m2_score <- ifelse(tail(m2_yoy, 1) > 0.05, 1,
+                     ifelse(tail(m2_yoy, 1) < 0, -1, 0))
+  rate_score <- ifelse(tail(treasury_10y$value, 1) > 3, -1,
+                       ifelse(tail(treasury_10y$value, 1) < 1, 1, 0))
+  dollar_score <- ifelse(!is.null(dxy) && tail(quantmod::Cl(dxy), 1) > 100, -1,
+                         ifelse(!is.null(dxy) && tail(quantmod::Cl(dxy), 1) < 90, 1, 0))
+
+  composite_risk_score <- (m2_score + rate_score + dollar_score) / 3
 
   return(
     list(
@@ -1197,29 +1235,37 @@ get_volatility <- function(data, windows = list(short = 7, medium = 30, long = 9
   vol_long <- TTR::runSD(returns, n = windows$long) * sqrt(365)
 
   # Volatility percentiles
-  vol_percentile_short <- rank(vol_short) / length(vol_short)
-  vol_percentile_medium <- rank(vol_medium) / length(vol_medium)
+  vol_percentile_short <- rank(vol_short, na.last = "keep") / sum(!is.na(vol_short))
+  vol_percentile_medium <- rank(vol_medium, na.last = "keep") / sum(!is.na(vol_medium))
 
   # GARCH-style volatility clustering
-  vol_regime_short <- ifelse(
-    vol_short > mean(vol_short, na.rm = TRUE) + sd(vol_short, na.rm = TRUE), "Extreme High",
-    ifelse(vol_short < mean(vol_short, na.rm = TRUE) - sd(vol_short, na.rm = TRUE), "Extreme Low",
-           ifelse(vol_short > mean(vol_short, na.rm = TRUE), "High", "Low")
-    )
+  vol_mean <- mean(vol_short, na.rm = TRUE)
+  vol_sd <- sd(vol_short, na.rm = TRUE)
+
+  vol_regime_short <- dplyr::case_when(
+    is.na(vol_short) ~ NA_character_,
+    vol_short > vol_mean + vol_sd ~ "Extreme High",
+    vol_short < vol_mean - vol_sd ~ "Extreme Low",
+    vol_short > vol_mean ~ "High",
+    TRUE ~ "Low"
   )
+
+  # Current regime with fallback
+  current_regime <- tail(vol_regime_short[!is.na(vol_regime_short)], 1)
+  if (length(current_regime) == 0) current_regime <- "Unknown"
+
+  current_regime_desc <- switch(current_regime,
+                                "Extreme High" = "Risk-Off (Capitulation)",
+                                "High" = "Active Trading",
+                                "Low" = "Trend Following",
+                                "Extreme Low" = "Complacency (Watch for Breakout)",
+                                "Unknown")
 
   # Volatility signals
   signals <- list(
-    # Volatility breakout (momentum strategy)
-    vol_breakout = vol_short > vol_medium * 1.5,
-    # Volatility mean reversion (range-bound strategy)
-    vol_compression = vol_short < vol_medium * 0.5,
-    # Regime detection
-    current_regime = switch(vol_regime_short[length(vol_regime_short)],
-                            "Extreme High" = "Risk-Off (Capitulation)",
-                            "High" = "Active Trading",
-                            "Low" = "Trend Following",
-                            "Extreme Low" = "Complacency (Watch for Breakout)")
+    vol_breakout = !is.na(vol_short) & !is.na(vol_medium) & vol_short > vol_medium * 1.5,
+    vol_compression = !is.na(vol_short) & !is.na(vol_medium) & vol_short < vol_medium * 0.5,
+    current_regime = current_regime_desc
   )
 
   return(list(
@@ -1524,37 +1570,41 @@ get_positioning <- function(api_key = NULL, start_time = "2026-02-01", google_tr
   response <- httr::GET(url)
   raw_data <- jsonlite::fromJSON(httr::content(response, "text"))
 
-  if (is.null(raw_data$transactions)) {
-    return("No whale transactions found in the specified window.")
+  if (is.null(raw_data$transactions) || length(raw_data$transactions) == 0) {
+    warning("No whale transactions found in the specified window.")
+    return(create_empty_positioning())
   }
 
   whale_df <- as.data.frame(raw_data$transactions) %>%
-    mutate(
+    dplyr::mutate(
       from_type = from$owner_type,
       to_type = to$owner_type,
       from_owner = from$owner,
       to_owner = to$owner
     )
 
+  max_amount <- max(whale_df$amount_usd, na.rm = TRUE)
+  if (is.infinite(max_amount)) max_amount <- 0
+
   metrics <- whale_df %>%
-    summarise(
+    dplyr::summarise(
       inflow_usd  = sum(amount_usd[from_type == "unknown" & to_type == "exchange"], na.rm = TRUE),
       outflow_usd = sum(amount_usd[from_type == "exchange" & to_type == "unknown"], na.rm = TRUE),
-      tx_count    = n(),
+      tx_count = dplyr::n(),
       pct = sum(amount_usd > max(whale_df$amount_usd)/2)
     ) %>%
-    mutate(netflow_usd = inflow_usd - outflow_usd)
+    dplyr::mutate(netflow_usd = inflow_usd - outflow_usd)
 
-  flow_regime <- case_when(
-    metrics$netflow_usd > (max(whale_df$amount_usd) * 10)  ~ "Extreme Inflows (Heavy Selling Pressure)",
+  flow_regime <- dplyr::case_when(
+    metrics$netflow_usd > (max_amount * 10)  ~ "Extreme Inflows (Heavy Selling Pressure)",
     metrics$netflow_usd > 0                     ~ "Net Inflows (Bearish Bias)",
-    metrics$netflow_usd < -(max(whale_df$amount_usd) * 10) ~ "Extreme Outflows (Heavy Accumulation)",
+    metrics$netflow_usd < -(max_amount * 10) ~ "Extreme Outflows (Heavy Accumulation)",
     metrics$netflow_usd < 0                     ~ "Net Outflows (Bullish Bias)",
     TRUE                                        ~ "Neutral / Balanced"
   )
 
-  whale_signal <- case_when(
-    metrics$pct > 50  ~ "High Whale Intensity (Volality Expected)",
+  whale_signal <- dplyr::case_when(
+    metrics$pct > 50  ~ "High Whale Intensity (Volatility Expected)",
     metrics$pct < 10   ~ "Low Whale Activity",
     TRUE                   ~ "Normal Whale Activity"
   )
@@ -1616,3 +1666,24 @@ get_positioning <- function(api_key = NULL, start_time = "2026-02-01", google_tr
   ))
 
 }
+
+# Helper function for empty returns
+create_empty_positioning <- function() {
+  return(list(
+    exchange_positioning = list(
+      netflow_summary = data.frame(
+        inflow_usd = 0, outflow_usd = 0, tx_count = 0, pct = 0, netflow_usd = 0
+      ),
+      flow_regime = "No Data",
+      top_exchange_target = NA
+    ),
+    whale_activity = list(
+      total_tx = 0,
+      whale_signal = "No Data",
+      largest_move_usd = 0
+    ),
+    raw_whale_data = data.frame(),
+    google_trends = NULL
+  ))
+}
+
