@@ -889,7 +889,7 @@ get_derivatives <- function(ticker = "BTCUSDT") {
 #' @importFrom dplyr lag full_join
 #' @importFrom fredr fredr_set_key fredr
 #' @importFrom quantmod getSymbols Cl
-get_macro <- function(fred_api_key = global_variables$fred_api_key, start_date = "2015-01-01"){
+get_macro <- function(fred_api_key = NULL, start_date = "2015-01-01"){
 
   fredr::fredr_set_key(fred_api_key)
 
@@ -1580,7 +1580,7 @@ get_positioning <- function(api_key = NULL, start_time = "2026-02-01", google_tr
   start_time <- as.numeric(as.POSIXct(start_time))
 
   url <- paste0("https://api.whale-alert.io/v1/transactions",
-                "?api_key=", global_variables$whaleAlert_api_key,
+                "?api_key=", api_key,
                 "&start=", start_time)
 
   response <- httr::GET(url)

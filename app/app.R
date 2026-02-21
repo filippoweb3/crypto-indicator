@@ -69,6 +69,9 @@ ui <- fluidPage(
         font-size: 12px;
         margin-left: 10px;
       }
+      .key-input {
+        margin-bottom: 10px;
+      }
     "))
   ),
 
@@ -149,39 +152,30 @@ ui <- fluidPage(
 
             br(),
 
-            # API Keys Section
-            h5("🔑 API Keys", style = "color: #3498db;"),
+            # API Keys Section - Manual Input
+            h5("🔑 API Keys (Optional)", style = "color: #3498db;"),
 
-            # FRED API Key dropdown
-            selectInput("fred_key_select",
-                        "FRED API Key:",
-                        choices = c("None", "Use from global_variables"),
-                        selected = "Use from global_variables"),
+            # FRED API Key manual input
+            textInput("fred_api_key",
+                      "FRED API Key:",
+                      value = "",
+                      placeholder = "Enter your FRED API key"),
 
-            # Whale Alert API Key dropdown
-            selectInput("whale_key_select",
-                        "Whale Alert API Key:",
-                        choices = c("None", "Use from global_variables"),
-                        selected = "Use from global_variables"),
+            # Whale Alert API Key manual input
+            textInput("whale_api_key",
+                      "Whale Alert API Key:",
+                      value = "",
+                      placeholder = "Enter your Whale Alert API key"),
 
             tags$small(class = "text-muted",
-                       "Select 'Use from global_variables' to use keys from global_variables list"),
+                       "API keys are optional. Leave blank to run without them."),
 
             br(), br(),
 
             # Action button
             actionButton("run_live", "🚀 Run Live Analysis",
                          class = "btn-danger",
-                         style = "width: 100%; font-weight: bold;"),
-
-            br(), br(),
-
-            # API Status
-            div(style = "background-color: #2c3e50; padding: 10px; border-radius: 5px;",
-                h5("API Status:", style = "color: #3498db;"),
-                textOutput("fred_status"),
-                textOutput("whale_status")
-            )
+                         style = "width: 100%; font-weight: bold;")
         )
       ),
 
@@ -331,58 +325,6 @@ server <- function(input, output, session) {
   })
 
   # ======================================
-  # GLOBAL VARIABLES FOR LIVE MODE
-  # ======================================
-  global_variables <- reactive({
-    if (exists("global_variables", envir = .GlobalEnv)) {
-      get("global_variables", envir = .GlobalEnv)
-    } else {
-      list(
-        fred_api_key = NULL,
-        whaleAlert_api_key = NULL
-      )
-    }
-  })
-
-  # Update API key dropdowns based on available keys
-  observe({
-    gv <- global_variables()
-
-    # Update FRED choices
-    fred_choices <- c("None")
-    if (!is.null(gv$fred_api_key) && gv$fred_api_key != "") {
-      fred_choices <- c(fred_choices, "Use from global_variables")
-    }
-    updateSelectInput(session, "fred_key_select", choices = fred_choices)
-
-    # Update Whale Alert choices
-    whale_choices <- c("None")
-    if (!is.null(gv$whaleAlert_api_key) && gv$whaleAlert_api_key != "") {
-      whale_choices <- c(whale_choices, "Use from global_variables")
-    }
-    updateSelectInput(session, "whale_key_select", choices = whale_choices)
-  })
-
-  # API Status displays
-  output$fred_status <- renderText({
-    gv <- global_variables()
-    if (!is.null(gv$fred_api_key) && gv$fred_api_key != "") {
-      "✅ FRED API Key available"
-    } else {
-      "❌ FRED API Key not set"
-    }
-  })
-
-  output$whale_status <- renderText({
-    gv <- global_variables()
-    if (!is.null(gv$whaleAlert_api_key) && gv$whaleAlert_api_key != "") {
-      "✅ Whale Alert API Key available"
-    } else {
-      "❌ Whale Alert API Key not set"
-    }
-  })
-
-  # ======================================
   # DEMO MODE HANDLER - Custom file upload
   # ======================================
   observeEvent(input$custom_demo, {
@@ -405,23 +347,14 @@ server <- function(input, output, session) {
 
     output$status <- renderText("🔄 Running live analysis...")
 
-    # Set API keys from global_variables if selected
-    gv <- global_variables()
-
-    if (input$fred_key_select == "Use from global_variables" && !is.null(gv$fred_api_key)) {
-      assign("fred_api_key", gv$fred_api_key, envir = .GlobalEnv)
-    }
-
-    if (input$whale_key_select == "Use from global_variables" && !is.null(gv$whaleAlert_api_key)) {
-      assign("whaleAlert_api_key", gv$whaleAlert_api_key, envir = .GlobalEnv)
-    }
-
-    # Run framework
+    # Run framework with API keys passed directly
     tryCatch({
       res <- crypto_predictive_framework(
         assets = input$asset,
         start_date = as.character(input$dates[1]),
-        include_google_trends = TRUE
+        include_google_trends = TRUE,
+        fred_api_key = if(input$fred_api_key != "") input$fred_api_key else NULL,
+        whale_api_key = if(input$whale_api_key != "") input$whale_api_key else NULL
       )
 
       results(res)
@@ -430,6 +363,21 @@ server <- function(input, output, session) {
 
     }, error = function(e) {
       output$status <- renderText(paste("❌ Error:", e$message))
+
+      # Helpful error messages
+      if (grepl("FRED", e$message)) {
+        showNotification(
+          "FRED API key issue. Check your key and try again.",
+          type = "error",
+          duration = 8
+        )
+      } else if (grepl("Whale", e$message)) {
+        showNotification(
+          "Whale Alert API key issue. Check your key and try again.",
+          type = "error",
+          duration = 8
+        )
+      }
     })
   })
 
@@ -522,7 +470,7 @@ server <- function(input, output, session) {
   }
 
   # ======================================
-  # ALL PLOTTING FUNCTIONS
+  # ALL PLOTTING FUNCTIONS (same as before)
   # ======================================
 
   output$mvrv_plot <- renderPlot({

@@ -293,8 +293,8 @@
 #' @importFrom dplyr filter slice_tail case_when
 crypto_predictive_framework <- function(assets = c("Bitcoin"),
                                         start_date = "2015-01-01",
-                                        fred_api_key = global_variables$fred_api_key,
-                                        whale_api_key = global_variables$whaleAlert_api_key,
+                                        fred_api_key = NULL,
+                                        whale_api_key = NULL,
                                         include_google_trends = TRUE) {
 
   #---------------------------------------------------------------------------
@@ -498,7 +498,7 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   message("🌎 Fetching macro indicators...")
 
   tryCatch({
-    macro_data <- get_macro(start_date = start_date)
+    macro_data <- get_macro(start_date = start_date, fred_api_key = fred_api_key)
     framework$raw_data$macro <- macro_data
 
     framework$signals$macro <- list(
@@ -555,7 +555,8 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     tryCatch({
       pos_data <- get_positioning(
         start_time = as.character(Sys.Date() - 7),
-        google_trends_keywords = c("bitcoin", "crypto", "blockchain")
+        google_trends_keywords = c("bitcoin", "crypto", "blockchain"),
+        api_key = whale_api_key
       )
 
       if (is.list(pos_data) && !is.character(pos_data)) {
