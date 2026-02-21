@@ -7,8 +7,8 @@
 crypto_predictive_framework(
   assets = c("Bitcoin"),
   start_date = "2015-01-01",
-  fred_api_key = NULL,
-  whale_api_key = NULL,
+  fred_api_key = global_variables$fred_api_key,
+  whale_api_key = global_variables$whaleAlert_api_key,
   include_google_trends = TRUE
 )
 }
@@ -79,7 +79,7 @@ A list object of class \code{crypto_framework} containing seven
   \strong{6. Summary:} Actionable bullet points and quick reference
 }
 \description{
-The flagship function of the crypto indicators package. This framework integrates
+The flagship function of the CryptoIndicator package. This framework integrates
 on-chain, derivatives, macro, volatility, and positioning indicators into a
 coherent decision system that generates actionable signals across multiple
 time horizons (short-term, medium-term, long-term).

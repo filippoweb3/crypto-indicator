@@ -2,16 +2,24 @@
 % Please edit documentation in R/framework.R
 \name{print_crypto_summary}
 \alias{print_crypto_summary}
-\title{Print comprehensive crypto framework summary}
+\title{Print Comprehensive Crypto Framework Summary}
 \usage{
 print_crypto_summary(x)
 }
 \arguments{
-\item{x}{The result object from crypto_predictive_framework()}
+\item{x}{A crypto_framework object returned by \code{\link{crypto_predictive_framework}}}
 }
 \value{
-None, prints to console
+None. Prints formatted summary to console.
 }
 \description{
-Print comprehensive crypto framework summary
+Displays a formatted, easy-to-understand summary of the crypto predictive framework
+results. The output is designed to be self-explanatory and shareable with team
+members, stakeholders, or anyone needing actionable crypto market insights.
+}
+\examples{
+\dontrun{
+result <- crypto_predictive_framework()
+print_crypto_summary(result)
+}
 }

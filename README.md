@@ -87,7 +87,51 @@ result$signals$onchain$mvrv$regime        # Market valuation regime
 result$decisions$regime_allocation$allocation$strategic  # Recommended allocation
 ```
 
-You can update the API keys in the `global_variables.R` script.
+------------------------------------------------------------------------
+
+## 📚 Function Documentation
+
+Each function in the package comes with comprehensive documentation. To access the help files:
+
+```r
+# Main framework function
+help("crypto_predictive_framework")
+
+# Summary function
+help("print_crypto_summary")
+
+# Data acquisition functions
+help("get_market_data")
+help("get_derivatives")
+help("get_macro")
+help("get_positioning")
+
+# Indicator calculation functions
+help("get_btc_issuance")
+help("get_onchain_indicators")
+help("get_volatility")
+```
+
+You can also use the shorthand:
+```r
+?crypto_predictive_framework
+?print_crypto_summary
+?get_market_data
+?get_derivatives
+?get_macro
+?get_positioning
+?get_btc_issuance
+?get_onchain_indicators
+?get_volatility
+```
+
+Each help file includes:
+- **Function description** and purpose
+- **Parameter details** with defaults
+- **Return value structure** explained
+- **Methodology** and interpretation guidelines
+- **Practical examples** with code
+- **References** to academic and industry sources
 
 ------------------------------------------------------------------------
 
@@ -112,6 +156,8 @@ WHALE_ALERT_API_KEY="your_whale_alert_key_here"
 | Binance              | ❌ No    | \-                        | \-                                                               |
 | CoinMarketCap        | ❌ No    | \-                        | \-                                                               |
 | Google Trends        | ❌ No    | \-                        | \-                                                               |
+
+You can update the API keys in the `global_variables.R` script.
 
 ------------------------------------------------------------------------
 
