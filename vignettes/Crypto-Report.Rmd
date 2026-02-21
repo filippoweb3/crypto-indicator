@@ -47,6 +47,8 @@ library(CryptoIndicator)
 library(kableExtra)
 library(ggplot2)
 library(patchwork)
+library(zoo)
+library(quantmod)
 
 devtools::load_all()
 
@@ -98,12 +100,45 @@ df2 <- data.frame(
                         ifelse(df2$compression, "Compression", "Normal"))
     df2$color <- ifelse(df2$breakout, "red",
                        ifelse(df2$compression, "green", "gray"))
+    
 df2 <- filter_by_date(df2, "date", "2025-01-01", Sys.Date())
+
+# Derivatives
+
+deriv <- frame$raw_data$derivatives
+df3 <- filter_by_date(deriv$data, "date", "2025-01-01", Sys.Date())
+df3$positive <- df3$avg_funding_rate > 0
+
+df4 <- data.frame(
+      date = deriv$data$date,
+      oi_percentile = deriv$oi_percentile * 100,
+      funding_percentile = deriv$funding_percentile * 100
+    )
+
+#df4 <- filter_by_date(df4, "date", "2025-01-01", Sys.Date())
+
+macro <- frame$raw_data$macro
+m2_data <- data.frame(
+  date = macro$liquidity$m2_us$date,
+  m2_yoy = macro$liquidity$m2_yoy * 100)
+m2_data <- filter_by_date(m2_data, "date", "2025-01-01", Sys.Date())
+m2_data <- m2_data[!is.na(m2_data$m2_yoy), ]
+
+dxy <- macro$dollar$dxy
+dxy_df <- data.frame(
+  date = as.Date(index(dxy)),
+  dxy = as.numeric(Cl(dxy)))
+
+dxy_df <- filter_by_date(dxy_df, "date", "2025-01-01", Sys.Date())
 ```
 
 \pagenumbering{arabic}
 
-```{r, echo=F, fig.height=5, fig.width=8, fig.align="center"}
+One Page analysis here
+
+\newpage
+
+```{r, echo=F, fig.height=9, fig.width=8, fig.align="center", warning=FALSE, message=FALSE}
 p1 <- ggplot(df, aes(x = timestamp, y = mvrv)) +
       geom_line(color = "darkgray", linewidth = 0.5) +
       geom_hline(yintercept = c(0.7, 0.9, 1.75),
@@ -117,9 +152,13 @@ p1 <- ggplot(df, aes(x = timestamp, y = mvrv)) +
       labs(title = "MVRV Ratio",
            x = "Date", y = "MVRV") +
       theme_minimal() +
-      theme(plot.title = element_text(hjust = 0.5), axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
+      theme(plot.title = element_text(hjust = 0.5),
+            axis.title.x = element_text(size = 9),
+            axis.title.y = element_text(size = 9)) + 
+      scale_x_date(
+        date_breaks = "6 months",
+        date_labels = "%b %Y"
+      )
 
 p2 <- ggplot(df, aes(x = timestamp, y = puell_multiple)) +
       geom_line(color = "darkgray", linewidth = 0.5) +
@@ -132,9 +171,13 @@ p2 <- ggplot(df, aes(x = timestamp, y = puell_multiple)) +
       labs(title = "Puell Multiple",
            x = "Date", y = "Puell Multiple") +
       theme_minimal() +
-      theme(plot.title = element_text(hjust = 0.5), axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
+      theme(plot.title = element_text(hjust = 0.5),
+            axis.title.x = element_text(size = 9),
+            axis.title.y = element_text(size = 9)) + 
+      scale_x_date(
+        date_breaks = "6 months",
+        date_labels = "%b %Y"
+      )
 
 p3 <- ggplot(df, aes(x = timestamp, y = nvts)) +
       geom_line(color = "darkgray", linewidth = 0.5) +
@@ -147,9 +190,13 @@ p3 <- ggplot(df, aes(x = timestamp, y = nvts)) +
       labs(title = "NVT Ratio",
            x = "Date", y = "NVT") +
       theme_minimal() +
-      theme(plot.title = element_text(hjust = 0.5), axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
+      theme(plot.title = element_text(hjust = 0.5),
+            axis.title.x = element_text(size = 9),
+            axis.title.y = element_text(size = 9)) + 
+      scale_x_date(
+        date_breaks = "6 months",
+        date_labels = "%b %Y"
+      )
 
 p4 <- ggplot(regime_data, aes(x = date, y = 1, fill = regime)) +
       geom_tile(height = 0.8) +
@@ -162,9 +209,18 @@ p4 <- ggplot(regime_data, aes(x = date, y = 1, fill = regime)) +
       theme_minimal() +
       theme(axis.text.y = element_blank(),
             axis.ticks.y = element_blank(),
-            plot.title = element_text(hjust = 0.5), legend.position = "right", axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
+            plot.title = element_text(hjust = 0.5),
+            legend.position = "right",
+            legend.text = element_text(size = 7),       
+            legend.title = element_text(size = 7),       
+            legend.key.size = unit(0.25, "cm"),           
+            legend.spacing.x = unit(0.2, "cm"),
+            axis.title.x = element_text(size = 9),
+            axis.title.y = element_text(size = 9)) + 
+      scale_x_date(
+        date_breaks = "6 months",
+        date_labels = "%b %Y"
+      )
 
 p5 <- ggplot(df1, aes(x = date)) +
       geom_line(aes(y = short_vol, color = "Short-term (7d)"), linewidth = 0.5) +
@@ -176,9 +232,17 @@ p5 <- ggplot(df1, aes(x = date)) +
            color = "Horizon") +
       theme_minimal() +
       theme(plot.title = element_text(hjust = 0.5),
-            legend.position = "right", axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
+            legend.position = "right",
+            legend.text = element_text(size = 7),       
+            legend.title = element_text(size = 7),       
+            legend.key.size = unit(0.25, "cm"),           
+            legend.spacing.x = unit(0.2, "cm"),
+            axis.title.x = element_text(size = 9),
+            axis.title.y = element_text(size = 9)) + 
+      scale_x_date(
+        date_breaks = "6 months",
+        date_labels = "%b %Y"
+      )
 
 p6 <- ggplot(df2, aes(x = date, y = 1, fill = signal)) +
       geom_tile(height = 0.8) +
@@ -190,10 +254,104 @@ p6 <- ggplot(df2, aes(x = date, y = 1, fill = signal)) +
       theme_minimal() +
       theme(axis.text.y = element_blank(),
             axis.ticks.y = element_blank(),
-            plot.title = element_text(hjust = 0.5), axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
+            plot.title = element_text(hjust = 0.5),
+            legend.text = element_text(size = 7),       
+            legend.title = element_text(size = 7),       
+            legend.key.size = unit(0.25, "cm"),           
+            legend.spacing.x = unit(0.2, "cm"),
+            axis.title.x = element_text(size = 9),
+            axis.title.y = element_text(size = 9)) + 
+      scale_x_date(
+        date_breaks = "6 months",
+        date_labels = "%b %Y"
+      )
 
-(p1 / p2 / p3) | (p4 / p5 / p6)
+p7 <- ggplot(df3, aes(x = date, y = avg_funding_rate * 100)) +
+      geom_col(aes(fill = positive), alpha = 0.7) +
+      geom_hline(yintercept = 0, linetype = "solid") +
+      geom_hline(yintercept = c(0.01, 0.05, -0.01),
+                 linetype = "dashed", color = "gray50", alpha = 0.5) +
+      scale_fill_manual(values = c("TRUE" = "green", "FALSE" = "red")) +
+      labs(title = "Funding Rates",
+           x = "Date", y = "Funding Rate (%)") +
+      theme_minimal() +
+      theme(legend.position = "none",
+            plot.title = element_text(hjust = 0.5),
+            axis.title.x = element_text(size = 9),
+            axis.title.y = element_text(size = 9))
+
+p8 <- ggplot(df4, aes(x = date)) +
+      geom_line(aes(y = oi_percentile, color = "OI Percentile"), linewidth = 0.5) +
+      geom_line(aes(y = funding_percentile, color = "Funding Percentile"),
+                linewidth = 0.5, linetype = "dashed") +
+      geom_hline(yintercept = c(10, 90), linetype = "dotted", color = "gray50") +
+      scale_color_manual(values = c("OI Percentile" = "blue",
+                                    "Funding Percentile" = "red")) +
+      labs(title = "Percentile Ranks",
+           x = "Date", y = "Percentile (%)",
+           color = "Metric") +
+      theme_minimal() +
+      theme(plot.title = element_text(hjust = 0.5),
+            legend.position = "right",
+            legend.text = element_text(size = 7),       
+            legend.title = element_text(size = 7),       
+            legend.key.size = unit(0.25, "cm"),           
+            legend.spacing.x = unit(0.2, "cm"),
+            axis.title.x = element_text(size = 9),
+            axis.title.y = element_text(size = 9))
+
+p9 <- ggplot(m2_data, aes(x = date, y = m2_yoy)) +
+      geom_line(color = "darkgreen", linewidth = 0.5) +
+      geom_hline(yintercept = c(0, 5), linetype = "dashed", color = "red") +
+      annotate("rect", xmin = min(m2_data$date), xmax = max(m2_data$date),
+               ymin = 5, ymax = max(m2_data$m2_yoy, na.rm = TRUE),
+               alpha = 0.1, fill = "green") +
+      annotate("rect", xmin = min(m2_data$date), xmax = max(m2_data$date),
+               ymin = min(m2_data$m2_yoy, na.rm = TRUE), ymax = 0,
+               alpha = 0.1, fill = "red") +
+      labs(title = "M2 Money Supply Growth",
+           x = "Date", y = "YoY % Change") +
+      theme_minimal() +
+      theme(plot.title = element_text(hjust = 0.5),
+            legend.text = element_text(size = 7),       
+            legend.title = element_text(size = 7),       
+            legend.key.size = unit(0.25, "cm"),           
+            legend.spacing.x = unit(0.2, "cm"),
+            axis.title.x = element_text(size = 9),
+            axis.title.y = element_text(size = 9)) + 
+      scale_x_date(
+        date_breaks = "6 months",
+        date_labels = "%b %Y"
+      )
+
+p10 <- ggplot(dxy_df, aes(x = date, y = dxy)) +
+      geom_line(color = "blue", linewidth = 0.5) +
+      geom_hline(yintercept = c(90, 100), linetype = "dashed", color = "red") +
+      annotate("rect", xmin = min(dxy_df$date), xmax = max(dxy_df$date),
+               ymin = 90, ymax = 100, alpha = 0.1, fill = "orange") +
+      labs(title = "US Dollar Index (DXY)",
+           x = "Date", y = "DXY") +
+      theme_minimal() +
+      theme(plot.title = element_text(hjust = 0.5),
+            legend.text = element_text(size = 7),       
+            legend.title = element_text(size = 7),       
+            legend.key.size = unit(0.25, "cm"),           
+            legend.spacing.x = unit(0.2, "cm"),
+            axis.title.x = element_text(size = 9),
+            axis.title.y = element_text(size = 9)) + 
+      scale_x_date(
+        date_breaks = "6 months",
+        date_labels = "%b %Y"
+      )
+
+# First create the left and right stacks
+left_stack <- p1 / p2 / p3 / p9 / p10
+right_stack <- p4 / p5 / p6 / p7 / p8
+
+# Then combine them side by side and apply layout
+combined_plot <- (left_stack | right_stack)
+
+# Display the plot
+combined_plot
 
 ```
