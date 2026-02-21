@@ -1,0 +1,54 @@
+---
+title: "Crypto Report"
+author: "Filippo Franchini"
+date: "Last update: `r Sys.Date()`"
+
+output: 
+  pdf_document:
+    number_sections: yes
+    keep_tex: true
+    extra_dependencies: ["float"]
+
+header-includes:
+  - \usepackage{makecell}
+  - \usepackage{fancyhdr}
+  - \pagestyle{fancy}
+  - \lhead{}
+  - \fancyhead[R]{}
+  - \fancyhead[C]{Crypto Report (DRAFT) -- \today}
+  - \fancyfoot[L]{\begin{minipage}[c]{6cm}Created by Filippo Franchini \\ Senior Technical Advisor \\ filippoweb3 on X/LinkedIn\end{minipage}}
+  - \fancyfoot[R]{\begin{minipage}[c]{2cm}\end{minipage}}
+  - \pagenumbering{gobble}
+  - \pagestyle{fancy}
+  - \setlength{\footskip}{35pt}
+
+vignette: >
+  %\VignetteIndexEntry{report}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+font_size: 11pt
+geometry: left=1cm,right=1cm,top=2cm,bottom=3cm
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.pos = "h", 
+  out.extra = "",
+  dpi = 300
+)
+```
+
+```{r setup, include = FALSE}
+library(knitr)
+library(dplyr)
+library(CryptoIndicator)
+library(kableExtra)
+
+devtools::load_all()
+```
+
+\pagenumbering{arabic}
+
+AAA
