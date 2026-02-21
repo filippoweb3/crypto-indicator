@@ -10,7 +10,7 @@ Authors@R:
       person("Filippo", "Franchini",
              comment = c(LinkedIn = "filippoweb3"),
              role = "ctb"))
-Description: A systematic, research-grade framework for analyzing 
+Description: A systematic framework for analyzing 
     cryptocurrency markets. Integrates five distinct categories of indicators 
     (on-chain, derivatives, macro, volatility, and positioning) into a coherent 
     decision system that generates actionable signals across multiple time 
