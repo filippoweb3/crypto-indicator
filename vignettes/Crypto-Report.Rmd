@@ -52,6 +52,8 @@ library(quantmod)
 
 devtools::load_all()
 
+start_date <- "2025-01-01"
+
 # On-chain
 
 filter_by_date <- function(data, date_col, start, end) {
@@ -60,7 +62,7 @@ filter_by_date <- function(data, date_col, start, end) {
   }
 
 onchain <- result$indicators$onchain
-df <- filter_by_date(onchain, "timestamp", "2025-01-01", Sys.Date())
+df <- filter_by_date(onchain, "timestamp", start_date, Sys.Date())
 
 # Volatility
 
@@ -80,14 +82,14 @@ regime_data$color <- case_when(
   TRUE ~ "gray"
   )
 
-regime_data <- filter_by_date(regime_data, "date", "2025-01-01", Sys.Date())
+regime_data <- filter_by_date(regime_data, "date", start_date, Sys.Date())
 
 df1 <- data.frame(
       date = onchain$timestamp,
       short_vol = vol$volatility$short * 100,
       medium_vol = vol$volatility$medium * 100
     )
-df1 <- filter_by_date(df1, "date", "2025-01-01", Sys.Date())
+df1 <- filter_by_date(df1, "date", start_date, Sys.Date())
 
 df2 <- data.frame(
       date = onchain$timestamp,
@@ -101,12 +103,12 @@ df2 <- data.frame(
     df2$color <- ifelse(df2$breakout, "red",
                        ifelse(df2$compression, "green", "gray"))
     
-df2 <- filter_by_date(df2, "date", "2025-01-01", Sys.Date())
+df2 <- filter_by_date(df2, "date", start_date, Sys.Date())
 
 # Derivatives
 
 deriv <- result$raw_data$derivatives
-df3 <- filter_by_date(deriv$data, "date", "2025-01-01", Sys.Date())
+df3 <- filter_by_date(deriv$data, "date", start_date, Sys.Date())
 df3$positive <- df3$avg_funding_rate > 0
 
 df4 <- data.frame(
@@ -121,7 +123,7 @@ macro <- result$raw_data$macro
 m2_data <- data.frame(
   date = macro$liquidity$m2_us$date,
   m2_yoy = macro$liquidity$m2_yoy * 100)
-m2_data <- filter_by_date(m2_data, "date", "2025-01-01", Sys.Date())
+m2_data <- filter_by_date(m2_data, "date", start_date, Sys.Date())
 m2_data <- m2_data[!is.na(m2_data$m2_yoy), ]
 
 dxy <- macro$dollar$dxy
@@ -129,7 +131,7 @@ dxy_df <- data.frame(
   date = as.Date(index(dxy)),
   dxy = as.numeric(Cl(dxy)))
 
-dxy_df <- filter_by_date(dxy_df, "date", "2025-01-01", Sys.Date())
+dxy_df <- filter_by_date(dxy_df, "date", start_date, Sys.Date())
 ```
 
 \pagenumbering{arabic}

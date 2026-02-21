@@ -4,6 +4,21 @@ library(ggplot2)
 library(dplyr)
 library(shinythemes)
 
+# ======================================
+# LOAD BUILT-IN DEMO DATA
+# ======================================
+# This file should be placed in the app's directory
+# Generate it once with: saveRDS(result, "demo_data.rds")
+
+default_demo <- NULL
+if (file.exists("demo_data.rds")) {
+  default_demo <- readRDS("demo_data.rds")
+  default_demo_date <- format(default_demo$metadata$timestamp, "%B %Y")
+} else {
+  default_demo_date <- "Not available"
+  warning("demo_data.rds not found. Please generate it first.")
+}
+
 # Define UI
 ui <- fluidPage(
   theme = shinytheme("darkly"),
@@ -24,58 +39,101 @@ ui <- fluidPage(
         border-radius: 5px;
         margin-bottom: 10px;
       }
-      .demo-mode {
-        background-color: #2ecc71;
+      .demo-badge {
+        background-color: #9b59b6;
         color: white;
-        padding: 5px;
-        border-radius: 5px;
-        text-align: center;
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-size: 14px;
         font-weight: bold;
-        margin-bottom: 10px;
+        margin-left: 10px;
+      }
+      .mode-selector {
+        background-color: #2c3e50;
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        border: 2px solid #3498db;
+      }
+      .mode-demo {
+        border-left: 5px solid #9b59b6;
+      }
+      .mode-live {
+        border-left: 5px solid #e74c3c;
+      }
+      .auto-load-badge {
+        background-color: #27ae60;
+        color: white;
+        padding: 3px 10px;
+        border-radius: 15px;
+        font-size: 12px;
+        margin-left: 10px;
       }
     "))
   ),
 
   # App title
-  titlePanel("🚀 CryptoIndicator Dashboard"),
+  titlePanel(
+    div("🚀 CryptoIndicator Dashboard",
+        span(class = "demo-badge", "✨ DEMO READY"))
+  ),
 
   # Sidebar layout
   sidebarLayout(
 
-    # Sidebar panel for inputs
+    # Sidebar panel
     sidebarPanel(
       width = 3,
 
-      # Demo mode toggle
-      div(class = "api-section",
-          h4("🎮 App Mode", style = "color: #3498db;"),
+      # Mode Selector
+      div(class = "mode-selector",
+          h4("🎮 App Mode", style = "color: #3498db; text-align: center;"),
           radioButtons("app_mode",
                        "Select Mode:",
                        choices = c(
-                         "Demo Mode (Load stored data)" = "demo",
-                         "Live Mode (Run analysis)" = "live"
+                         "🌙 Demo Mode (No API keys)" = "demo",
+                         "⚡ Live Mode (With API keys)" = "live"
                        ),
-                       selected = "demo")
+                       selected = "demo",
+                       width = "100%")
       ),
 
-      # Conditional UI for demo mode
+      # ======================================
+      # DEMO MODE UI
+      # ======================================
       conditionalPanel(
         condition = "input.app_mode == 'demo'",
-        div(class = "api-section",
-            h4("📁 Demo Data", style = "color: #3498db;"),
-            fileInput("result_file",
-                      "Upload result.rds file",
-                      accept = c(".rds")),
-            tags$small(class = "text-muted",
-                       "Download the result file from the live analysis and share it with interviewers.")
+        div(class = "api-section mode-demo",
+            h4("📁 Demo Options", style = "color: #9b59b6;"),
+
+            # Auto-loaded demo info
+            div(style = "background-color: #27ae60; padding: 10px; border-radius: 8px; margin-bottom: 15px;",
+                h5("✅ Auto-Loaded Demo", style = "color: white;"),
+                p(strong(default_demo_date), style = "color: white;"),
+                p(style = "color: #ecf0f1; font-size: 12px; margin-top: 5px;",
+                  "Default demo loads automatically when app starts")
+            ),
+
+            # Option to upload custom file
+            div(style = "background-color: #34495e; padding: 10px; border-radius: 8px;",
+                h5("📤 Upload Custom Demo", style = "color: #3498db;"),
+                fileInput("custom_demo",
+                          "Choose .rds file",
+                          accept = c(".rds"),
+                          placeholder = "No file selected"),
+                p(style = "font-size: 12px; color: #bdc3c7;",
+                  "Upload your own .rds file to view different dates")
+            )
         )
       ),
 
-      # Conditional UI for live mode
+      # ======================================
+      # LIVE MODE UI
+      # ======================================
       conditionalPanel(
         condition = "input.app_mode == 'live'",
-        div(class = "api-section",
-            h4("🔑 API Keys", style = "color: #3498db;"),
+        div(class = "api-section mode-live",
+            h4("⚡ Live Analysis", style = "color: #e74c3c;"),
 
             # Asset selection
             selectInput("asset",
@@ -91,6 +149,9 @@ ui <- fluidPage(
 
             br(),
 
+            # API Keys Section
+            h5("🔑 API Keys", style = "color: #3498db;"),
+
             # FRED API Key dropdown
             selectInput("fred_key_select",
                         "FRED API Key:",
@@ -104,40 +165,55 @@ ui <- fluidPage(
                         selected = "Use from global_variables"),
 
             tags$small(class = "text-muted",
-                       "Select 'Use from global_variables' to use keys from global_variables list")
-        ),
+                       "Select 'Use from global_variables' to use keys from global_variables list"),
 
-        # Action button
-        actionButton("run", "Run Analysis",
-                     class = "btn-primary",
-                     style = "width: 100%;"),
+            br(), br(),
 
-        br(), br(),
+            # Action button
+            actionButton("run_live", "🚀 Run Live Analysis",
+                         class = "btn-danger",
+                         style = "width: 100%; font-weight: bold;"),
 
-        # Status message
-        textOutput("status"),
-        br(),
-        textOutput("last_price"),
+            br(), br(),
 
-        # API Status
-        br(),
-        div(class = "api-section",
-            h5("API Status:", style = "color: #3498db;"),
-            textOutput("fred_status"),
-            textOutput("whale_status")
+            # API Status
+            div(style = "background-color: #2c3e50; padding: 10px; border-radius: 5px;",
+                h5("API Status:", style = "color: #3498db;"),
+                textOutput("fred_status"),
+                textOutput("whale_status")
+            )
         )
       ),
 
-      # Demo mode indicator
+      br(),
+
+      # Common elements for both modes
       conditionalPanel(
-        condition = "input.app_mode == 'demo'",
-        div(class = "demo-mode",
-            "✨ Demo Mode Active - Using Stored Data ✨"
+        condition = "input.app_mode == 'demo' || input.app_mode == 'live'",
+
+        # Date range (for filtering)
+        dateRangeInput("filter_dates",
+                       "Filter Date Range:",
+                       start = "2020-01-01",
+                       end = Sys.Date()),
+
+        br(),
+
+        # Status
+        textOutput("status"),
+        br(),
+
+        # Current data info
+        div(class = "api-section",
+            h5("📊 Current Data:", style = "color: #3498db;"),
+            textOutput("data_source"),
+            textOutput("data_date"),
+            textOutput("current_price")
         )
       )
     ),
 
-    # Main panel for outputs
+    # Main panel
     mainPanel(
       width = 9,
 
@@ -232,13 +308,31 @@ ui <- fluidPage(
   )
 )
 
-# Define server logic
+# Define server
 server <- function(input, output, session) {
 
   # Reactive value to store results
   results <- reactiveVal(NULL)
 
-  # Global variables list
+  # Reactive value to track data source
+  data_source <- reactiveVal("none")
+
+  # ======================================
+  # AUTO-LOAD DEFAULT DEMO ON STARTUP
+  # ======================================
+  observe({
+    if (!is.null(default_demo)) {
+      results(default_demo)
+      data_source("Default Demo")
+      output$status <- renderText("✅ Default demo auto-loaded")
+    } else {
+      output$status <- renderText("❌ Default demo file not found")
+    }
+  })
+
+  # ======================================
+  # GLOBAL VARIABLES FOR LIVE MODE
+  # ======================================
   global_variables <- reactive({
     if (exists("global_variables", envir = .GlobalEnv)) {
       get("global_variables", envir = .GlobalEnv)
@@ -288,24 +382,28 @@ server <- function(input, output, session) {
     }
   })
 
-  # Load stored result file
-  observeEvent(input$result_file, {
-    req(input$result_file)
+  # ======================================
+  # DEMO MODE HANDLER - Custom file upload
+  # ======================================
+  observeEvent(input$custom_demo, {
+    req(input$custom_demo)
 
     tryCatch({
-      res <- readRDS(input$result_file$datapath)
-      results(res)
-      output$status <- renderText("✅ Demo data loaded successfully!")
+      custom_data <- readRDS(input$custom_demo$datapath)
+      results(custom_data)
+      data_source(paste("Custom:", input$custom_demo$name))
+      output$status <- renderText(paste("✅ Loaded:", input$custom_demo$name))
     }, error = function(e) {
       output$status <- renderText(paste("❌ Error loading file:", e$message))
     })
   })
 
-  # Run analysis when button is clicked (live mode)
-  observeEvent(input$run, {
-    req(input$app_mode == "live")
+  # ======================================
+  # LIVE MODE HANDLER
+  # ======================================
+  observeEvent(input$run_live, {
 
-    output$status <- renderText("🔄 Running analysis...")
+    output$status <- renderText("🔄 Running live analysis...")
 
     # Set API keys from global_variables if selected
     gv <- global_variables()
@@ -327,26 +425,43 @@ server <- function(input, output, session) {
       )
 
       results(res)
-      output$status <- renderText("✅ Analysis complete!")
+      data_source(paste("Live Analysis -", Sys.Date()))
+      output$status <- renderText("✅ Live analysis complete!")
 
     }, error = function(e) {
       output$status <- renderText(paste("❌ Error:", e$message))
     })
   })
 
-  # Last price display
-  output$last_price <- renderText({
-    req(results())
-    if (!is.null(results()$indicators$onchain)) {
-      onchain <- results()$indicators$onchain
-      last_close <- onchain$close[nrow(onchain)]
-      paste("Last Price: $", format(round(last_close, 2), big.mark = ","))
+  # ======================================
+  # DATA INFO DISPLAYS
+  # ======================================
+
+  output$data_source <- renderText({
+    if (is.null(results())) {
+      "No data loaded"
     } else {
-      ""
+      paste("Source:", data_source())
     }
   })
 
-  # Risk box
+  output$data_date <- renderText({
+    req(results())
+    paste("Data from:", format(results()$metadata$timestamp, "%B %Y"))
+  })
+
+  output$current_price <- renderText({
+    req(results())
+    if (!is.null(results()$indicators$onchain)) {
+      last_close <- tail(results()$indicators$onchain$close, 1)
+      paste("BTC Price: $", format(round(last_close, 2), big.mark = ","))
+    }
+  })
+
+  # ======================================
+  # RISK AND METRICS DISPLAYS
+  # ======================================
+
   output$risk_box <- renderUI({
     req(results())
 
@@ -360,7 +475,6 @@ server <- function(input, output, session) {
     )
   })
 
-  # Time horizon boxes
   output$short_term <- renderUI({
     req(results())
     signal <- results()$decisions$short_term$momentum$signal
@@ -393,7 +507,6 @@ server <- function(input, output, session) {
     )
   })
 
-  # Summary text
   output$summary <- renderPrint({
     req(results())
     print_crypto_summary(results())
@@ -409,7 +522,7 @@ server <- function(input, output, session) {
   }
 
   # ======================================
-  # ON-CHAIN MODULE
+  # ALL PLOTTING FUNCTIONS
   # ======================================
 
   output$mvrv_plot <- renderPlot({
@@ -417,7 +530,7 @@ server <- function(input, output, session) {
     onchain <- results()$indicators$onchain
     if (is.null(onchain)) return(NULL)
 
-    df <- filter_by_date(onchain, "timestamp", input$dates[1], input$dates[2])
+    df <- filter_by_date(onchain, "timestamp", input$filter_dates[1], input$filter_dates[2])
     if (nrow(df) == 0) return(NULL)
 
     ggplot(df, aes(x = timestamp, y = mvrv)) +
@@ -441,7 +554,7 @@ server <- function(input, output, session) {
     onchain <- results()$indicators$onchain
     if (is.null(onchain)) return(NULL)
 
-    df <- filter_by_date(onchain, "timestamp", input$dates[1], input$dates[2])
+    df <- filter_by_date(onchain, "timestamp", input$filter_dates[1], input$filter_dates[2])
     if (nrow(df) == 0) return(NULL)
 
     ggplot(df, aes(x = timestamp, y = puell_multiple)) +
@@ -463,7 +576,7 @@ server <- function(input, output, session) {
     onchain <- results()$indicators$onchain
     if (is.null(onchain)) return(NULL)
 
-    df <- filter_by_date(onchain, "timestamp", input$dates[1], input$dates[2])
+    df <- filter_by_date(onchain, "timestamp", input$filter_dates[1], input$filter_dates[2])
     if (nrow(df) == 0) return(NULL)
 
     ggplot(df, aes(x = timestamp, y = nvts)) +
@@ -497,30 +610,16 @@ server <- function(input, output, session) {
     )
   })
 
-  # ======================================
-  # VOLATILITY MODULE
-  # ======================================
-
   output$volatility_regime_plot <- renderPlot({
     req(results())
     vol <- results()$indicators$volatility
     if (is.null(vol)) return(NULL)
 
-    # Get the last 365 days of volatility data
     n <- length(vol$regime)
     last_n <- min(365, n)
     regime_data <- data.frame(
       date = tail(results()$indicators$onchain$timestamp, last_n),
       regime = tail(vol$regime, last_n)
-    )
-
-    # Create a colored bar plot for regimes
-    regime_data$color <- case_when(
-      regime_data$regime == "Extreme High" ~ "red",
-      regime_data$regime == "High" ~ "orange",
-      regime_data$regime == "Low" ~ "lightgreen",
-      regime_data$regime == "Extreme Low" ~ "green",
-      TRUE ~ "gray"
     )
 
     ggplot(regime_data, aes(x = date, y = 1, fill = regime)) +
@@ -543,7 +642,6 @@ server <- function(input, output, session) {
     onchain <- results()$indicators$onchain
     if (is.null(vol) || is.null(onchain)) return(NULL)
 
-    # Get last 365 days
     n <- min(365, nrow(onchain))
     df <- data.frame(
       date = tail(onchain$timestamp, n),
@@ -570,7 +668,6 @@ server <- function(input, output, session) {
     onchain <- results()$indicators$onchain
     if (is.null(vol) || is.null(onchain)) return(NULL)
 
-    # Get last 365 days
     n <- min(365, nrow(onchain))
     df <- data.frame(
       date = tail(onchain$timestamp, n),
@@ -578,11 +675,8 @@ server <- function(input, output, session) {
       compression = tail(vol$signals$vol_compression, n)
     )
 
-    # Create signals plot
     df$signal <- ifelse(df$breakout, "Breakout",
                         ifelse(df$compression, "Compression", "Normal"))
-    df$color <- ifelse(df$breakout, "red",
-                       ifelse(df$compression, "green", "gray"))
 
     ggplot(df, aes(x = date, y = 1, fill = signal)) +
       geom_tile(height = 0.8) +
@@ -600,8 +694,6 @@ server <- function(input, output, session) {
   output$volatility_table <- renderTable({
     req(results())
     vol_sig <- results()$signals$volatility
-
-    # Calculate current signal counts (last 30 days)
     vol_full <- results()$indicators$volatility
     last_30 <- tail(vol_full$signals$vol_breakout, 30)
     breakout_count <- sum(last_30, na.rm = TRUE)
@@ -623,16 +715,12 @@ server <- function(input, output, session) {
     )
   })
 
-  # ======================================
-  # DERIVATIVES MODULE
-  # ======================================
-
   output$funding_plot <- renderPlot({
     req(results())
     deriv <- results()$raw_data$derivatives
     if (is.null(deriv) || is.null(deriv$data)) return(NULL)
 
-    df <- filter_by_date(deriv$data, "date", input$dates[1], input$dates[2])
+    df <- filter_by_date(deriv$data, "date", input$filter_dates[1], input$filter_dates[2])
     if (nrow(df) == 0) return(NULL)
 
     df$positive <- df$avg_funding_rate > 0
@@ -661,7 +749,7 @@ server <- function(input, output, session) {
       funding_percentile = deriv$funding_percentile * 100
     )
 
-    df <- filter_by_date(df, "date", input$dates[1], input$dates[2])
+    df <- filter_by_date(df, "date", input$filter_dates[1], input$filter_dates[2])
     if (nrow(df) == 0) return(NULL)
 
     ggplot(df, aes(x = date)) +
@@ -683,7 +771,6 @@ server <- function(input, output, session) {
     req(results())
     signals <- results()$signals$derivatives
 
-    # Create a simple indicator of crowded signals
     df <- data.frame(
       signal = c("Crowded Long", "Crowded Short", "OI Momentum"),
       value = c(ifelse(signals$crowded_long, 1, 0),
@@ -721,10 +808,6 @@ server <- function(input, output, session) {
     }
   })
 
-  # ======================================
-  # MACRO MODULE
-  # ======================================
-
   output$m2_plot <- renderPlot({
     req(results())
     macro <- results()$raw_data$macro
@@ -735,7 +818,7 @@ server <- function(input, output, session) {
       m2_yoy = macro$liquidity$m2_yoy * 100
     )
 
-    m2_data <- filter_by_date(m2_data, "date", input$dates[1], input$dates[2])
+    m2_data <- filter_by_date(m2_data, "date", input$filter_dates[1], input$filter_dates[2])
     m2_data <- m2_data[!is.na(m2_data$m2_yoy), ]
 
     if (nrow(m2_data) == 0) return(NULL)
@@ -762,11 +845,11 @@ server <- function(input, output, session) {
 
     dxy <- macro$dollar$dxy
     dxy_df <- data.frame(
-      date = as.Date(index(dxy)),
-      dxy = as.numeric(Cl(dxy))
+      date = as.Date(zoo::index(dxy)),
+      dxy = as.numeric(quantmod::Cl(dxy))
     )
 
-    dxy_df <- filter_by_date(dxy_df, "date", input$dates[1], input$dates[2])
+    dxy_df <- filter_by_date(dxy_df, "date", input$filter_dates[1], input$filter_dates[2])
     if (nrow(dxy_df) == 0) return(NULL)
 
     ggplot(dxy_df, aes(x = date, y = dxy)) +
@@ -820,10 +903,6 @@ server <- function(input, output, session) {
     }
   })
 
-  # ======================================
-  # POSITIONING MODULE
-  # ======================================
-
   output$whale_plot <- renderPlot({
     req(results())
     pos <- results()$signals$positioning
@@ -834,13 +913,11 @@ server <- function(input, output, session) {
         theme_void() +
         labs(title = "Whale Flow")
     } else {
-      # Determine color based on flow
       flow_color <- ifelse(grepl("Extreme Inflows", pos$whale_flow), "red",
                            ifelse(grepl("Inflows", pos$whale_flow), "orange",
                                   ifelse(grepl("Extreme Outflows", pos$whale_flow), "green",
                                          ifelse(grepl("Outflows", pos$whale_flow), "lightgreen", "gray"))))
 
-      # Get netflow data if available
       netflow <- ifelse(!is.null(results()$raw_data$positioning),
                         results()$raw_data$positioning$exchange_positioning$netflow_summary$netflow_usd / 1e6,
                         0)
@@ -869,7 +946,6 @@ server <- function(input, output, session) {
         theme_void() +
         labs(title = "Retail Sentiment")
     } else {
-      # Create a gauge-like plot
       df <- data.frame(
         x = c(0, 20, 40, 60, 80, 100),
         xend = c(20, 40, 60, 80, 100, 120),
@@ -908,7 +984,7 @@ server <- function(input, output, session) {
       hits = trends_data$hits
     )
 
-    trends_df <- filter_by_date(trends_df, "date", input$dates[1], input$dates[2])
+    trends_df <- filter_by_date(trends_df, "date", input$filter_dates[1], input$filter_dates[2])
 
     ggplot(trends_df, aes(x = date, y = hits)) +
       geom_line(color = "orange", size = 1) +
@@ -923,7 +999,7 @@ server <- function(input, output, session) {
     req(results())
 
     if (is.null(results()$signals$positioning)) {
-      data.frame(Message = "No positioning data available. Provide Whale Alert API key.")
+      data.frame(Message = "No positioning data available")
     } else {
       pos <- results()$signals$positioning
 
