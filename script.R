@@ -35,7 +35,7 @@ frame <- crypto_predictive_framework(fred_api_key = global_variables$fred_api_ke
 
 print_crypto_summary(frame)
 
-
+usethis::use_data(frame, overwrite = T)
 
 # Charts ----
 

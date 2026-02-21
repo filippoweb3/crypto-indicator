@@ -45,10 +45,155 @@ library(knitr)
 library(dplyr)
 library(CryptoIndicator)
 library(kableExtra)
+library(ggplot2)
+library(patchwork)
 
 devtools::load_all()
+
+# On-chain
+
+filter_by_date <- function(data, date_col, start, end) {
+    if (is.null(data) || nrow(data) == 0) return(data)
+    data[data[[date_col]] >= start & data[[date_col]] <= end, ]
+  }
+
+onchain <- frame$indicators$onchain
+df <- filter_by_date(onchain, "timestamp", "2025-01-01", Sys.Date())
+
+# Volatility
+
+vol <- frame$indicators$volatility
+
+regime_data <- data.frame(
+  date = frame$indicators$onchain$timestamp,
+  regime = vol$regime
+  )
+
+# Create a colored bar plot for regimes
+regime_data$color <- case_when(
+  regime_data$regime == "Extreme High" ~ "red",
+  regime_data$regime == "High" ~ "orange",
+  regime_data$regime == "Low" ~ "lightgreen",
+  regime_data$regime == "Extreme Low" ~ "green",
+  TRUE ~ "gray"
+  )
+
+regime_data <- filter_by_date(regime_data, "date", "2025-01-01", Sys.Date())
+
+df1 <- data.frame(
+      date = onchain$timestamp,
+      short_vol = vol$volatility$short * 100,
+      medium_vol = vol$volatility$medium * 100
+    )
+df1 <- filter_by_date(df1, "date", "2025-01-01", Sys.Date())
+
+df2 <- data.frame(
+      date = onchain$timestamp,
+      breakout = vol$signals$vol_breakout,
+      compression = vol$signals$vol_compression
+    )
+
+    # Create signals plot
+    df2$signal <- ifelse(df2$breakout, "Breakout",
+                        ifelse(df2$compression, "Compression", "Normal"))
+    df2$color <- ifelse(df2$breakout, "red",
+                       ifelse(df2$compression, "green", "gray"))
+df2 <- filter_by_date(df2, "date", "2025-01-01", Sys.Date())
 ```
 
 \pagenumbering{arabic}
 
-AAA
+```{r, echo=F, fig.height=5, fig.width=8, fig.align="center"}
+p1 <- ggplot(df, aes(x = timestamp, y = mvrv)) +
+      geom_line(color = "darkgray", linewidth = 0.5) +
+      geom_hline(yintercept = c(0.7, 0.9, 1.75),
+                 linetype = "dashed", color = "red", alpha = 0.5) +
+      annotate("rect", xmin = min(df$timestamp), xmax = max(df$timestamp),
+               ymin = 0.7, ymax = 0.9, alpha = 0.1, fill = "orange") +
+      annotate("text", x = min(df$timestamp), y = 0.65, label = "Extreme Bottom",
+               hjust = 0, size = 3, color = "darkgreen") +
+      annotate("text", x = min(df$timestamp), y = 1.8, label = "Extreme Top",
+               hjust = 0, size = 3, color = "red") +
+      labs(title = "MVRV Ratio",
+           x = "Date", y = "MVRV") +
+      theme_minimal() +
+      theme(plot.title = element_text(hjust = 0.5), axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+p2 <- ggplot(df, aes(x = timestamp, y = puell_multiple)) +
+      geom_line(color = "darkgray", linewidth = 0.5) +
+      geom_hline(yintercept = c(0.7, 2),
+                 linetype = "dashed", color = "red", alpha = 0.5) +
+      annotate("text", x = min(df$timestamp), y = 0.6, label = "Miner Capitulation",
+               hjust = 0, size = 3, color = "darkgreen") +
+      annotate("text", x = min(df$timestamp), y = 2.1, label = "Miner Selling",
+               hjust = 0, size = 3, color = "red") +
+      labs(title = "Puell Multiple",
+           x = "Date", y = "Puell Multiple") +
+      theme_minimal() +
+      theme(plot.title = element_text(hjust = 0.5), axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+p3 <- ggplot(df, aes(x = timestamp, y = nvts)) +
+      geom_line(color = "darkgray", linewidth = 0.5) +
+      geom_hline(yintercept = c(30, 70),
+                 linetype = "dashed", color = "red", alpha = 0.5) +
+      annotate("text", x = min(df$timestamp), y = 25, label = "Undervalued",
+               hjust = 0, size = 3, color = "darkgreen") +
+      annotate("text", x = min(df$timestamp), y = 75, label = "Overvalued",
+               hjust = 0, size = 3, color = "red") +
+      labs(title = "NVT Ratio",
+           x = "Date", y = "NVT") +
+      theme_minimal() +
+      theme(plot.title = element_text(hjust = 0.5), axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+p4 <- ggplot(regime_data, aes(x = date, y = 1, fill = regime)) +
+      geom_tile(height = 0.8) +
+      scale_fill_manual(values = c("Extreme High" = "red",
+                                   "High" = "orange",
+                                   "Low" = "lightgreen",
+                                   "Extreme Low" = "green")) +
+      labs(title = "Volatility Regimes",
+           x = "Date", y = "", fill = "Regime") +
+      theme_minimal() +
+      theme(axis.text.y = element_blank(),
+            axis.ticks.y = element_blank(),
+            plot.title = element_text(hjust = 0.5), legend.position = "right", axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+p5 <- ggplot(df1, aes(x = date)) +
+      geom_line(aes(y = short_vol, color = "Short-term (7d)"), linewidth = 0.5) +
+      geom_line(aes(y = medium_vol, color = "Medium-term (30d)"), linewidth = 0.5, linetype = "dashed") +
+      scale_color_manual(values = c("Short-term (7d)" = "darkgray",
+                                    "Medium-term (30d)" = "red")) +
+      labs(title = "Volatility Comparison",
+           x = "Date", y = "Annualized Volatility (%)",
+           color = "Horizon") +
+      theme_minimal() +
+      theme(plot.title = element_text(hjust = 0.5),
+            legend.position = "right", axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+p6 <- ggplot(df2, aes(x = date, y = 1, fill = signal)) +
+      geom_tile(height = 0.8) +
+      scale_fill_manual(values = c("Breakout" = "red",
+                                   "Compression" = "green",
+                                   "Normal" = "gray")) +
+      labs(title = "Volatility Signals",
+           x = "Date", y = "", fill = "Signal Type") +
+      theme_minimal() +
+      theme(axis.text.y = element_blank(),
+            axis.ticks.y = element_blank(),
+            plot.title = element_text(hjust = 0.5), axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+(p1 / p2 / p3) | (p4 / p5 / p6)
+
+```
