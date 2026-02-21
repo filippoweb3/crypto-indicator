@@ -1,12 +1,25 @@
 Package: CryptoIndicator
 Type: Package
-Title: CryptoIndicator
+Title: A Comprehensive Predictive Framework for Digital Assets
 Version: 0.1.0
-Author: Filippo Franchini
-Maintainer: Filippo Franchini <filippoweb3 on X/LinkedIn>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+Authors@R: 
+    c(person("Filippo", "Franchini",
+             email = "flc.franchini@gmail.com",
+             comment = c(LinkedIn = "filippoweb3"),
+             role = c("aut", "cre")),
+      person("Filippo", "Franchini",
+             comment = c(LinkedIn = "filippoweb3"),
+             role = "ctb"))
+Description: A systematic, research-grade framework for analyzing 
+    cryptocurrency markets. Integrates five distinct categories of indicators 
+    (on-chain, derivatives, macro, volatility, and positioning) into a coherent 
+    decision system that generates actionable signals across multiple time 
+    horizons (short-term, medium-term, long-term). Includes data acquisition 
+    from multiple sources (CoinMarketCap, Binance Futures, FRED, Yahoo Finance, 
+    Whale Alert, Google Trends) and provides comprehensive risk assessment with 
+    color-coded alerts. Designed for quantitative researchers, portfolio 
+    managers, and individual traders seeking data-driven edge in crypto markets.
+License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 Depends: 
@@ -18,7 +31,14 @@ Imports:
     fredr,
     ggplot2,
     gtrendsR,
+    httr,
+    jsonlite,
+    quantmod,
     scales,
+    shiny,
+    shinythemes,
     TTR,
     zoo
+URL: https://github.com/filippoweb3/crypto-indicator
+BugReports: https://github.com/filippoweb3/crypto-indicator/issues
 RoxygenNote: 7.3.1
