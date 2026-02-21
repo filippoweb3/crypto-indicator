@@ -1,7 +1,3 @@
-# app.R
-# Enhanced CryptoIndicator Shiny Application
-# With API Key Selection from Global Variables
-
 library(shiny)
 library(CryptoIndicator)
 library(ggplot2)
@@ -28,6 +24,15 @@ ui <- fluidPage(
         border-radius: 5px;
         margin-bottom: 10px;
       }
+      .demo-mode {
+        background-color: #2ecc71;
+        color: white;
+        padding: 5px;
+        border-radius: 5px;
+        text-align: center;
+        font-weight: bold;
+        margin-bottom: 10px;
+      }
     "))
   ),
 
@@ -41,59 +46,94 @@ ui <- fluidPage(
     sidebarPanel(
       width = 3,
 
-      # Asset selection
-      selectInput("asset",
-                  "Select Asset:",
-                  choices = c("Bitcoin"),
-                  selected = "Bitcoin"),
-
-      # Date range
-      dateRangeInput("dates",
-                     "Date Range:",
-                     start = "2020-01-01",
-                     end = Sys.Date()),
-
-      br(),
-
-      # API Keys Section
+      # Demo mode toggle
       div(class = "api-section",
-          h4("🔑 API Keys", style = "color: #3498db;"),
-
-          # FRED API Key dropdown
-          selectInput("fred_key_select",
-                      "FRED API Key:",
-                      choices = c("None", "Use from global_variables"),
-                      selected = "Use from global_variables"),
-
-          # Whale Alert API Key dropdown
-          selectInput("whale_key_select",
-                      "Whale Alert API Key:",
-                      choices = c("None", "Use from global_variables"),
-                      selected = "Use from global_variables"),
-
-
-          tags$small(class = "text-muted",
-                     "Select 'Use from global_variables' to use keys from global_variables list")
+          h4("🎮 App Mode", style = "color: #3498db;"),
+          radioButtons("app_mode",
+                       "Select Mode:",
+                       choices = c(
+                         "Demo Mode (Load stored data)" = "demo",
+                         "Live Mode (Run analysis)" = "live"
+                       ),
+                       selected = "demo")
       ),
 
-      # Action button
-      actionButton("run", "Run Analysis",
-                   class = "btn-primary",
-                   style = "width: 100%;"),
+      # Conditional UI for demo mode
+      conditionalPanel(
+        condition = "input.app_mode == 'demo'",
+        div(class = "api-section",
+            h4("📁 Demo Data", style = "color: #3498db;"),
+            fileInput("result_file",
+                      "Upload result.rds file",
+                      accept = c(".rds")),
+            tags$small(class = "text-muted",
+                       "Download the result file from the live analysis and share it with interviewers.")
+        )
+      ),
 
-      br(), br(),
+      # Conditional UI for live mode
+      conditionalPanel(
+        condition = "input.app_mode == 'live'",
+        div(class = "api-section",
+            h4("🔑 API Keys", style = "color: #3498db;"),
 
-      # Status message
-      textOutput("status"),
-      br(),
-      textOutput("last_price"),
+            # Asset selection
+            selectInput("asset",
+                        "Select Asset:",
+                        choices = c("Bitcoin"),
+                        selected = "Bitcoin"),
 
-      # API Status
-      br(),
-      div(class = "api-section",
-          h5("API Status:", style = "color: #3498db;"),
-          textOutput("fred_status"),
-          textOutput("whale_status")
+            # Date range
+            dateRangeInput("dates",
+                           "Date Range:",
+                           start = "2020-01-01",
+                           end = Sys.Date()),
+
+            br(),
+
+            # FRED API Key dropdown
+            selectInput("fred_key_select",
+                        "FRED API Key:",
+                        choices = c("None", "Use from global_variables"),
+                        selected = "Use from global_variables"),
+
+            # Whale Alert API Key dropdown
+            selectInput("whale_key_select",
+                        "Whale Alert API Key:",
+                        choices = c("None", "Use from global_variables"),
+                        selected = "Use from global_variables"),
+
+            tags$small(class = "text-muted",
+                       "Select 'Use from global_variables' to use keys from global_variables list")
+        ),
+
+        # Action button
+        actionButton("run", "Run Analysis",
+                     class = "btn-primary",
+                     style = "width: 100%;"),
+
+        br(), br(),
+
+        # Status message
+        textOutput("status"),
+        br(),
+        textOutput("last_price"),
+
+        # API Status
+        br(),
+        div(class = "api-section",
+            h5("API Status:", style = "color: #3498db;"),
+            textOutput("fred_status"),
+            textOutput("whale_status")
+        )
+      ),
+
+      # Demo mode indicator
+      conditionalPanel(
+        condition = "input.app_mode == 'demo'",
+        div(class = "demo-mode",
+            "✨ Demo Mode Active - Using Stored Data ✨"
+        )
       )
     ),
 
@@ -198,13 +238,11 @@ server <- function(input, output, session) {
   # Reactive value to store results
   results <- reactiveVal(NULL)
 
-  # Global variables list (in real app, this would be loaded from environment)
+  # Global variables list
   global_variables <- reactive({
-    # Try to get from global environment
     if (exists("global_variables", envir = .GlobalEnv)) {
       get("global_variables", envir = .GlobalEnv)
     } else {
-      # Return empty list if not found
       list(
         fred_api_key = NULL,
         whaleAlert_api_key = NULL
@@ -229,7 +267,6 @@ server <- function(input, output, session) {
       whale_choices <- c(whale_choices, "Use from global_variables")
     }
     updateSelectInput(session, "whale_key_select", choices = whale_choices)
-
   })
 
   # API Status displays
@@ -251,8 +288,22 @@ server <- function(input, output, session) {
     }
   })
 
-  # Run analysis when button is clicked
+  # Load stored result file
+  observeEvent(input$result_file, {
+    req(input$result_file)
+
+    tryCatch({
+      res <- readRDS(input$result_file$datapath)
+      results(res)
+      output$status <- renderText("✅ Demo data loaded successfully!")
+    }, error = function(e) {
+      output$status <- renderText(paste("❌ Error loading file:", e$message))
+    })
+  })
+
+  # Run analysis when button is clicked (live mode)
   observeEvent(input$run, {
+    req(input$app_mode == "live")
 
     output$status <- renderText("🔄 Running analysis...")
 

@@ -30,12 +30,13 @@ pos <- get_positioning(api_key = global_variables$whaleAlert_api_key)
 
 # Engage Decision Framework ----
 
-frame <- crypto_predictive_framework(fred_api_key = global_variables$fred_api_key,
+result <- crypto_predictive_framework(fred_api_key = global_variables$fred_api_key,
                                      whale_api_key = global_variables$whaleAlert_api_key)
 
-print_crypto_summary(frame)
+print_crypto_summary(result)
 
-usethis::use_data(frame, overwrite = T)
+usethis::use_data(result, overwrite = T)
+saveRDS(result, "crypto_result_feb2026.rds")
 
 # Charts ----
 

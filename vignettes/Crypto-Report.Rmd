@@ -59,15 +59,15 @@ filter_by_date <- function(data, date_col, start, end) {
     data[data[[date_col]] >= start & data[[date_col]] <= end, ]
   }
 
-onchain <- frame$indicators$onchain
+onchain <- result$indicators$onchain
 df <- filter_by_date(onchain, "timestamp", "2025-01-01", Sys.Date())
 
 # Volatility
 
-vol <- frame$indicators$volatility
+vol <- result$indicators$volatility
 
 regime_data <- data.frame(
-  date = frame$indicators$onchain$timestamp,
+  date = result$indicators$onchain$timestamp,
   regime = vol$regime
   )
 
@@ -105,7 +105,7 @@ df2 <- filter_by_date(df2, "date", "2025-01-01", Sys.Date())
 
 # Derivatives
 
-deriv <- frame$raw_data$derivatives
+deriv <- result$raw_data$derivatives
 df3 <- filter_by_date(deriv$data, "date", "2025-01-01", Sys.Date())
 df3$positive <- df3$avg_funding_rate > 0
 
@@ -117,7 +117,7 @@ df4 <- data.frame(
 
 #df4 <- filter_by_date(df4, "date", "2025-01-01", Sys.Date())
 
-macro <- frame$raw_data$macro
+macro <- result$raw_data$macro
 m2_data <- data.frame(
   date = macro$liquidity$m2_us$date,
   m2_yoy = macro$liquidity$m2_yoy * 100)
