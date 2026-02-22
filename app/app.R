@@ -1,11 +1,9 @@
-devtools::install()
-devtools::load_all()
-
 library(shiny)
 library(CryptoIndicator)
 library(ggplot2)
 library(dplyr)
 library(shinythemes)
+library(waiter)
 
 # ======================================
 # LOAD BUILT-IN DEMO DATA
@@ -24,6 +22,8 @@ if (file.exists("demo_data.rds")) {
 
 # Define UI
 ui <- fluidPage(
+  use_waiter(),
+
   theme = shinytheme("darkly"),
 
   # Custom CSS
@@ -307,6 +307,21 @@ ui <- fluidPage(
 
 # Define server
 server <- function(input, output, session) {
+
+  # Create and show loading screen on startup
+  w <- Waiter$new(
+    html = tagList(
+      spin_flower(),  # Animated spinner
+      h4("Loading CryptoIndicator...", style = "color: white;")
+    ),
+    color = "rgba(52, 152, 219, 0.9)"  # Semi-transparent blue overlay
+  )
+  w$show()  # Show immediately
+
+  devtools::install()
+  devtools::load_all()
+
+  w$hide()
 
   # Reactive value to store results
   results <- reactiveVal(NULL)
