@@ -1,3 +1,6 @@
+devtools::install()
+devtools::load_all()
+
 library(shiny)
 library(CryptoIndicator)
 library(ggplot2)
@@ -59,7 +62,7 @@ ui <- fluidPage(
         border-left: 5px solid #9b59b6;
       }
       .mode-live {
-        border-left: 5px solid #e74c3c;
+        border-left: 5px solid #27ae60;
       }
       .auto-load-badge {
         background-color: #27ae60;
@@ -77,8 +80,8 @@ ui <- fluidPage(
 
   # App title
   titlePanel(
-    div("🚀 CryptoIndicator Dashboard",
-        span(class = "demo-badge", "✨ DEMO READY"))
+    div("CryptoIndicator Dashboard",
+        span(class = "demo-badge", "DEMO READY"))
   ),
 
   # Sidebar layout
@@ -90,12 +93,12 @@ ui <- fluidPage(
 
       # Mode Selector
       div(class = "mode-selector",
-          h4("🎮 App Mode", style = "color: #3498db; text-align: center;"),
+          h4("App Mode", style = "color: #3498db; text-align: center;"),
           radioButtons("app_mode",
                        "Select Mode:",
                        choices = c(
-                         "🌙 Demo Mode (No API keys)" = "demo",
-                         "⚡ Live Mode (With API keys)" = "live"
+                         "Demo Mode (No API keys)" = "demo",
+                         "Live Mode (With API keys)" = "live"
                        ),
                        selected = "demo",
                        width = "100%")
@@ -107,7 +110,7 @@ ui <- fluidPage(
       conditionalPanel(
         condition = "input.app_mode == 'demo'",
         div(class = "api-section mode-demo",
-            h4("📁 Demo Options", style = "color: #9b59b6;"),
+            h4("Demo Options", style = "color: #9b59b6;"),
 
             # Auto-loaded demo info
             div(style = "background-color: #27ae60; padding: 10px; border-radius: 8px; margin-bottom: 15px;",
@@ -136,7 +139,7 @@ ui <- fluidPage(
       conditionalPanel(
         condition = "input.app_mode == 'live'",
         div(class = "api-section mode-live",
-            h4("⚡ Live Analysis", style = "color: #e74c3c;"),
+            h4("Live Analysis", style = "color: #27ae60;"),
 
             # Asset selection
             selectInput("asset",
@@ -173,7 +176,7 @@ ui <- fluidPage(
             br(), br(),
 
             # Action button
-            actionButton("run_live", "🚀 Run Live Analysis",
+            actionButton("run_live", "Run Live Analysis",
                          class = "btn-danger",
                          style = "width: 100%; font-weight: bold;")
         )
@@ -214,16 +217,16 @@ ui <- fluidPage(
       # Risk level display
       fluidRow(
         column(12,
-               h3("🎯 Current Risk Level"),
+               h3("Current Risk Level"),
                uiOutput("risk_box")
         )
       ),
 
       # Key metrics
       fluidRow(
-        column(4, h4("📈 Short-Term"), uiOutput("short_term")),
-        column(4, h4("📊 Medium-Term"), uiOutput("medium_term")),
-        column(4, h4("📉 Long-Term"), uiOutput("long_term"))
+        column(4, h4("Short-Term"), uiOutput("short_term")),
+        column(4, h4("Medium-Term"), uiOutput("medium_term")),
+        column(4, h4("Long-Term"), uiOutput("long_term"))
       ),
 
       # Tabs for different views
