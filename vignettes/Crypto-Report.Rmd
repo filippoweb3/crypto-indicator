@@ -141,7 +141,7 @@ dxy_df <- filter_by_date(dxy_df, "date", start_date, Sys.Date())
 
 \huge \textbf{CryptoIndicator Report}  
 \vspace{0.1cm}  
-\large \textbf{Explore more with \ulink{ https://filippoweb3.shinyapps.io/crypto-indicator-demo/}{CryptoIndicator App}}  
+\large \textbf{Explore more with \ulink{https://filippoweb3.shinyapps.io/crypto-indicator-demo/}{CryptoIndicator App}}  
 \vspace{0.5cm}  
 
 \normalsize
