@@ -4,10 +4,7 @@
 \alias{get_macro}
 \title{Fetch and Analyze Macroeconomic Indicators for Crypto Markets}
 \usage{
-get_macro(
-  fred_api_key = global_variables$fred_api_key,
-  start_date = "2015-01-01"
-)
+get_macro(fred_api_key = NULL, start_date = "2015-01-01")
 }
 \arguments{
 \item{fred_api_key}{Character string containing your FRED API key. Default
