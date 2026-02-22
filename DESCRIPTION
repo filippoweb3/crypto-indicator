@@ -38,6 +38,7 @@ Imports:
     shiny,
     shinythemes,
     TTR,
+    waiter,
     zoo
 URL: https://github.com/filippoweb3/crypto-indicator
 BugReports: https://github.com/filippoweb3/crypto-indicator/issues
