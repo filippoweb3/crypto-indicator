@@ -2,9 +2,6 @@
 # 📈 CryptoIndicator: A Comprehensive Predictive Framework for Digital Assets
 
 <p align="center">
-  <a href="https://github.com/filippoweb3/crypto-indicator">
-    <img src="https://img.shields.io/badge/GitHub-Repo-181717?style=for-the-badge&logo=github" alt="GitHub">
-  </a>
   <a href="https://filippoweb3.shinyapps.io/crypto-indicator-demo/">
     <img src="https://img.shields.io/badge/🚀_Live_Demo-Start_App-2ecc71?style=for-the-badge&logo=rstudio" alt="Live Demo">
   </a>
