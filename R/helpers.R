@@ -638,12 +638,17 @@ get_derivatives <- function(ticker = "BTCUSDT") {
 
   signals <- list(
     # High OI with high funding suggests crowded long (potential reversal)
-    crowded_long = !is.na(oi_percentile) > 0.9 & !is.na(funding_percentile) > 0.9,
+    crowded_long = !is.na(oi_percentile) & !is.na(funding_percentile) &
+      oi_percentile > 0.9 & funding_percentile > 0.9,
+
     # Low OI with negative funding suggests capitulation (potential bottom)
-    crowded_short = !is.na(oi_percentile) < 0.1 & !is.na(funding_percentile) < 0.1,
+    crowded_short = !is.na(oi_percentile) & !is.na(funding_percentile) &
+      oi_percentile < 0.1 & funding_percentile < 0.1,
+
     # Open interest momentum
     oi_momentum = (derivatives_data$open_interest /
                      dplyr::lag(derivatives_data$open_interest, 7)) - 1,
+
     # Funding rate regime
     funding_regime = dplyr::case_when(
       is.na(derivatives_data$avg_funding_rate) ~ NA_character_,
