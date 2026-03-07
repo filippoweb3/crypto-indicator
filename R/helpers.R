@@ -592,13 +592,13 @@ get_onchain_indicators <- function(data){
 get_derivatives <- function(ticker = "BTCUSDT") {
 
   # open interest
-  oi <- cryptoQuotes::get_openinterest(ticker = ticker, source = "binance", interval = "1d")
+  oi <- cryptoQuotes::get_openinterest(ticker = ticker, source = "binance", interval = "1d", from = Sys.Date() - 27)
   oi <- data.frame(date = as.Date(as.POSIXct(attributes(oi)$index)),
                    open_interest = oi$open_interest)
 
 
   # funding rate
-  funding <- cryptoQuotes::get_fundingrate(ticker = ticker, source = "binance")
+  funding <- cryptoQuotes::get_fundingrate(ticker = ticker, source = "binance", from = Sys.Date() - 27)
   funding <- data.frame(date = as.Date(as.POSIXct(attributes(funding)$index)),
                         funding_rate = funding$funding_rate)
 
@@ -610,7 +610,7 @@ get_derivatives <- function(ticker = "BTCUSDT") {
     )
 
   # long/short ratio
-  ls_ratio <- cryptoQuotes::get_lsratio(ticker = ticker, source = "Binance", interval = "1d")
+  ls_ratio <- cryptoQuotes::get_lsratio(ticker = ticker, source = "Binance", interval = "1d", from = Sys.Date() - 27)
   ls_ratio <- data.frame(date = as.Date(as.POSIXct(attributes(ls_ratio)$index)),
                          long = ls_ratio$long,
                          short = ls_ratio$short,
