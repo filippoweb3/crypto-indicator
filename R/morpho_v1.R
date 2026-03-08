@@ -332,162 +332,6 @@ get_vault_v1_list <- function(first = 100, skip = 0, chain_ids = c(1, 8453),
   return(result_tibble)
 }
 
-#' Get pagination info from any vault list
-#'
-#' @param vault_list Result from get_vault_v1_list or get_vault_v2_list
-#' @return List with pagination information
-#' @export
-get_pagination_info <- function(vault_list) {
-  attr(vault_list, "pagination")
-}
-
-#' Get comprehensive metrics for a specific Vault V1 with automatic chain detection
-#'
-#' @param vault_address Character. Ethereum address of the vault
-#' @param chain_id Integer. Optional specific chain ID. If NULL, scans all chains.
-#' @param verbose Logical. Print scanning progress (default: TRUE)
-#' @param human_readable Logical. Include formatted fields (default: TRUE)
-#'
-#' @return A list with vault metrics, including correct share prices
-#' @export
-get_vault_v1_by_address <- function(vault_address, chain_id = NULL, verbose = TRUE, human_readable = TRUE) {
-
-  if (!.is_valid_address(vault_address)) {
-    stop("Invalid Ethereum address format: ", vault_address)
-  }
-
-  # If chain_id is provided, just query that chain
-  if (!is.null(chain_id)) {
-    if (verbose) cat("🔍 Checking chain", chain_id, "...\n")
-
-    result <- tryCatch({
-      .fetch_vault_v1_by_address(vault_address, chain_id)
-    }, error = function(e) NULL)
-
-    if (!is.null(result)) {
-      if (verbose) cat("✅ Found on chain", chain_id, "\n")
-      # Enhance with calculated fields
-      result <- .enhance_vault_data(result)
-      if (human_readable) {
-        result <- .add_human_readable_fields(result)
-      }
-      return(result)
-    } else {
-      stop("Vault V1 not found for address: ", vault_address, " on chain: ", chain_id)
-    }
-  }
-
-  # No chain_id provided - scan all chains
-  if (verbose) cat("🔍 Scanning all chains for vault:", vault_address, "\n")
-
-  # Get all chain IDs from CHAIN_NAMES
-  all_chains <- as.numeric(names(CHAIN_NAMES))
-
-  for (i in seq_along(all_chains)) {
-    cid <- all_chains[i]
-    chain_name <- CHAIN_NAMES[as.character(cid)]
-
-    if (verbose) cat("  ", i, "/", length(all_chains), ": Checking", chain_name, "...", sep="")
-
-    result <- tryCatch({
-      .fetch_vault_v1_by_address(vault_address, cid)
-    }, error = function(e) NULL)
-
-    if (!is.null(result)) {
-      if (verbose) cat(" ✅ FOUND!\n")
-      result$chain_id <- cid
-      result$chain_name <- chain_name
-      # Enhance with calculated fields
-      result <- .enhance_vault_data(result)
-      if (human_readable) {
-        result <- .add_human_readable_fields(result)
-      }
-      return(result)
-    }
-
-    if (verbose) cat(" ❌\n")
-  }
-
-  stop("Vault V1 not found for address: ", vault_address, " on any chain")
-}
-
-#' Internal function to enhance vault data with calculated fields
-#'
-#' @param vault List. Raw vault data from .fetch_vault_v1_by_address
-#' @return Enhanced vault list with share prices and flags
-#' @keywords internal
-.enhance_vault_data <- function(vault) {
-
-  # Convert raw amounts to human-readable based on asset type
-  vault$total_assets_human <- case_when(
-    vault$asset_symbol %in% STABLECOINS ~ vault$total_assets / 1e6,
-    vault$asset_symbol %in% ETH_TOKENS ~ vault$total_assets / 1e18,
-    vault$asset_symbol %in% BTC_TOKENS ~ vault$total_assets / 1e8,
-    TRUE ~ vault$total_assets / 1e18  # Default to 18 decimals
-  )
-
-  # Shares ALWAYS have 18 decimals in Morpho
-  vault$total_supply_human <- vault$total_supply / 1e18
-
-  # CORRECT share price calculations
-  vault$share_price <- vault$total_assets_human / vault$total_supply_human
-  vault$share_price_usd <- vault$total_assets_usd / vault$total_supply_human
-
-  # Asset type flags
-  vault$is_stablecoin <- vault$asset_symbol %in% STABLECOINS
-  vault$is_eth <- vault$asset_symbol %in% ETH_TOKENS
-  vault$is_btc <- vault$asset_symbol %in% BTC_TOKENS
-
-  return(vault)
-}
-
-#' Internal function to add human-readable formatted fields
-#'
-#' @param vault List. Enhanced vault data from .enhance_vault_data
-#' @return Vault list with additional formatted fields
-#' @keywords internal
-.add_human_readable_fields <- function(vault) {
-
-  # Format total assets
-  vault$total_assets_formatted <- case_when(
-    vault$is_stablecoin ~ paste0("$", format(round(vault$total_assets_human, 0), big.mark = ",")),
-    vault$is_eth ~ paste0(format(round(vault$total_assets_human, 2), big.mark = ","), " ETH"),
-    vault$is_btc ~ paste0(format(round(vault$total_assets_human, 4), big.mark = ","), " BTC"),
-    TRUE ~ format(vault$total_assets_human, scientific = FALSE)
-  )
-
-  # TVL formatting
-  vault$tvl_millions <- vault$total_assets_usd / 1e6
-  vault$tvl_formatted <- paste0("$", format(round(vault$tvl_millions, 1), big.mark = ","), "M")
-  vault$tvl_billions <- round(vault$total_assets_usd / 1e9, 2)
-
-  # Share price formatting
-  vault$share_price_formatted <- case_when(
-    vault$is_stablecoin ~ paste0("$", round(vault$share_price_usd, 4)),
-    vault$is_eth ~ paste0(round(vault$share_price, 4), " ETH (",
-                          round(vault$share_price_usd, 2), " USD)"),
-    vault$is_btc ~ paste0(round(vault$share_price, 6), " BTC (",
-                          round(vault$share_price_usd, 2), " USD)"),
-    TRUE ~ paste0("$", round(vault$share_price_usd, 4))
-  )
-
-  # Total supply formatting
-  vault$total_supply_formatted <- paste0(
-    format(round(vault$total_supply_human, 0), big.mark = ","),
-    " shares"
-  )
-
-  # Liquidity ratio
-  vault$liquidity_ratio <- if (vault$total_assets_usd > 0) {
-    vault$liquidity_usd / vault$total_assets_usd
-  } else {
-    0
-  }
-  vault$liquidity_ratio_formatted <- paste0(round(vault$liquidity_ratio * 100, 1), "%")
-
-  return(vault)
-}
-
 #' Internal function to fetch vault data for a specific chain
 #'
 #' @param vault_address Character. Ethereum address of the vault
@@ -561,219 +405,6 @@ get_vault_v1_by_address <- function(vault_address, chain_id = NULL, verbose = TR
     liquidity_usd = as.numeric(vault$liquidity$usd %||% 0),
     fetched_at = Sys.time()
   )
-}
-
-#' Get metrics for multiple Vault V1s with automatic chain detection
-#'
-#' @param vault_addresses Character vector of vault addresses
-#' @param verbose Logical. Print scanning progress (default: TRUE)
-#' @param max_retries Integer. Maximum retries per vault (default: 1)
-#' @param human_readable Logical. Include formatted fields (default: TRUE)
-#'
-#' @return A tibble with vault metrics for all found vaults, including share prices
-#' @export
-get_vaults_v1 <- function(vault_addresses, verbose = TRUE, max_retries = 1,
-                          human_readable = TRUE) {
-
-  results <- map_dfr(seq_along(vault_addresses), function(i) {
-    addr <- vault_addresses[i]
-
-    if (!.is_valid_address(addr)) {
-      if (verbose) cat("  ❌ Invalid address format:", addr, "\n")
-      return(tibble(vault_address = addr, found = FALSE))
-    }
-
-    if (verbose) cat("\n[", i, "/", length(vault_addresses), "] Processing: ", addr, "\n", sep="")
-
-    # Try with retries
-    for (attempt in 1:max_retries) {
-      vault <- tryCatch({
-        get_vault_v1_by_address(addr, chain_id = NULL, verbose = verbose,
-                                human_readable = human_readable)
-      }, error = function(e) {
-        if (verbose) cat("  ❌ Error:", e$message, "\n")
-        return(NULL)
-      })
-
-      if (!is.null(vault)) break
-
-      if (attempt < max_retries) {
-        if (verbose) cat("  Retrying (", attempt, "/", max_retries, ")...\n", sep="")
-        Sys.sleep(1)
-      }
-    }
-
-    if (is.null(vault)) {
-      return(tibble(
-        vault_address = addr,
-        found = FALSE
-      ))
-    }
-
-    # Build result tibble with all available fields
-    result <- tibble(
-      vault_address = vault$address,
-      name = vault$name %||% NA,
-      symbol = vault$symbol %||% NA,
-      found = TRUE,
-      chain_id = vault$chain_id,
-      chain_name = vault$chain_name %||% CHAIN_NAMES[as.character(vault$chain_id)] %||% paste("Chain", vault$chain_id),
-      asset_symbol = vault$asset_symbol %||% NA,
-      total_assets = vault$total_assets,
-      total_assets_usd = vault$total_assets_usd,
-      total_supply = vault$total_supply,
-      liquidity_usd = vault$liquidity_usd,
-      fetched_at = vault$fetched_at
-    )
-
-    # Add calculated fields if available
-    if (!is.null(vault$total_assets_human)) {
-      result <- result %>%
-        mutate(
-          total_assets_human = vault$total_assets_human,
-          total_supply_human = vault$total_supply_human,
-          share_price = vault$share_price,
-          share_price_usd = vault$share_price_usd,
-          tvl_billions = vault$total_assets_usd / 1e9,
-          tvl_formatted = paste0("$", format(round(vault$total_assets_usd / 1e6, 1), big.mark = ","), "M"),
-          is_stablecoin = vault$is_stablecoin %||% FALSE,
-          is_eth = vault$is_eth %||% FALSE,
-          is_btc = vault$is_btc %||% FALSE
-        )
-    }
-
-    # Add human-readable fields if available
-    if (!is.null(vault$share_price_formatted)) {
-      result <- result %>%
-        mutate(
-          total_assets_formatted = vault$total_assets_formatted,
-          share_price_formatted = vault$share_price_formatted,
-          total_supply_formatted = vault$total_supply_formatted,
-          liquidity_ratio = vault$liquidity_ratio,
-          liquidity_ratio_formatted = vault$liquidity_ratio_formatted
-        )
-    }
-
-    return(result)
-  })
-
-  # Print summary
-  found_count <- sum(results$found)
-  if (verbose) {
-    cat("\n", paste(rep("=", 60), collapse = ""), "\n")
-    cat("📊 Found", found_count, "of", length(vault_addresses), "vaults\n")
-    if (found_count > 0 && "tvl_formatted" %in% names(results)) {
-      cat("\nTop found vaults:\n")
-      results %>%
-        filter(found) %>%
-        arrange(desc(total_assets_usd)) %>%
-        head(5) %>%
-        mutate(display = paste0("  • ", name, " (", chain_name, "): ", tvl_formatted)) %>%
-        pull(display) %>%
-        cat(sep = "\n")
-    }
-    cat(paste(rep("=", 60), collapse = ""), "\n")
-  }
-
-  invisible(results)
-}
-
-#' Get APY data for all Vault V1s
-#'
-#' @description
-#' Retrieves comprehensive yield-related metrics for multiple Vault V1s simultaneously,
-#' including daily, weekly, monthly, and average APYs.
-#'
-#' @param first Integer. Number of vaults to return (default: 100)
-#' @param chain_ids Integer vector. Filter vaults by chain IDs (default: c(1, 8453))
-#' @param human_readable Logical. Format percentages (default: TRUE)
-#'
-#' @return A tibble with comprehensive APY metrics
-#' @export
-get_vault_v1_apys <- function(first = 100, chain_ids = c(1, 8453), human_readable = TRUE) {
-
-  query <- '
-  query GetVaultV1APYs($first: Int, $chainIds: [Int!]) {
-    vaults(first: $first, where: { chainId_in: $chainIds }, orderBy: TotalAssetsUsd, orderDirection: Desc) {
-      items {
-        address
-        symbol
-        name
-        asset {
-          symbol
-          decimals
-          yield { apr }
-        }
-        state {
-          apy
-          netApy
-          netApyWithoutRewards
-          avgApy
-          avgNetApy
-          dailyApy
-          dailyNetApy
-          weeklyApy
-          weeklyNetApy
-          monthlyApy
-          monthlyNetApy
-          rewards {
-            asset {
-              address
-              symbol
-              chain { id }
-            }
-            supplyApr
-            yearlySupplyTokens
-          }
-        }
-      }
-    }
-  }
-  '
-
-  result <- .execute_query(query, list(first = first, chainIds = chain_ids))
-
-  if (is.null(result$data$vaults$items)) {
-    return(tibble())
-  }
-
-  items <- result$data$vaults$items
-
-  result_tibble <- map_dfr(items, function(v) {
-    tibble(
-      vault_address = v$address,
-      symbol = v$symbol %||% NA,
-      name = v$name %||% NA,
-      asset_symbol = v$asset$symbol %||% NA,
-      asset_decimals = as.integer(v$asset$decimals %||% 18),
-      base_asset_apr = as.numeric(v$asset$yield$apr %||% 0),
-      apy = as.numeric(v$state$apy %||% 0),
-      net_apy = as.numeric(v$state$netApy %||% 0),
-      net_apy_without_rewards = as.numeric(v$state$netApyWithoutRewards %||% 0),
-      avg_apy = as.numeric(v$state$avgApy %||% 0),
-      avg_net_apy = as.numeric(v$state$avgNetApy %||% 0),
-      daily_apy = as.numeric(v$state$dailyApy %||% 0),
-      daily_net_apy = as.numeric(v$state$dailyNetApy %||% 0),
-      weekly_apy = as.numeric(v$state$weeklyApy %||% 0),
-      weekly_net_apy = as.numeric(v$state$weeklyNetApy %||% 0),
-      monthly_apy = as.numeric(v$state$monthlyApy %||% 0),
-      monthly_net_apy = as.numeric(v$state$monthlyNetApy %||% 0),
-      reward_count = length(v$state$rewards %||% list()),
-      fetched_at = Sys.time()
-    )
-  })
-
-  if (human_readable) {
-    result_tibble <- result_tibble %>%
-      mutate(
-        apy_formatted = paste0(round(apy * 100, 2), "%"),
-        net_apy_formatted = paste0(round(net_apy * 100, 2), "%"),
-        avg_net_apy_formatted = paste0(round(avg_net_apy * 100, 2), "%"),
-        daily_net_apy_formatted = paste0(round(daily_net_apy * 100, 2), "%")
-      )
-  }
-
-  return(result_tibble)
 }
 
 #' Get allocation data for all Vault V1s
@@ -871,70 +502,6 @@ get_vault_v1_allocations <- function(first = 100, chain_ids = c(1, 8453), human_
   }
 
   return(result_tibble)
-}
-
-#' Get warnings for Vault V1s
-#'
-#' @description
-#' Retrieves active warnings for Vault V1s, which indicate potential risk factors
-#' or configuration issues.
-#'
-#' @return A tibble with vault warnings
-#' @export
-get_vault_v1_warnings <- function() {
-
-  query <- '
-  query GetVaultV1Warnings {
-    vaults {
-      items {
-        address
-        name
-        symbol
-        warnings {
-          type
-          level
-        }
-      }
-    }
-  }
-  '
-
-  result <- .execute_query(query, list())
-
-  if (is.null(result$data$vaults$items)) {
-    return(tibble())
-  }
-
-  items <- result$data$vaults$items
-
-  # Expand warnings
-  map_dfr(items, function(v) {
-    vault_address <- v$address
-    vault_name <- v$name %||% NA
-    vault_symbol <- v$symbol %||% NA
-
-    warnings <- v$warnings %||% list()
-
-    if (length(warnings) == 0) {
-      return(tibble(
-        vault_address = vault_address,
-        vault_name = vault_name,
-        vault_symbol = vault_symbol,
-        warning_type = NA_character_,
-        warning_level = NA_character_
-      ))
-    }
-
-    map_dfr(warnings, function(w) {
-      tibble(
-        vault_address = vault_address,
-        vault_name = vault_name,
-        vault_symbol = vault_symbol,
-        warning_type = w$type %||% NA,
-        warning_level = w$level %||% NA
-      )
-    })
-  })
 }
 
 #' Get top depositors for a specific Vault V1 with automatic chain detection
@@ -1204,393 +771,6 @@ get_vault_v1_transactions <- function(vault_address, first = 10, skip = 0, chain
   return(transactions)
 }
 
-#' Get market positions for a specific user with automatic chain detection
-#'
-#' @description
-#' Fetches all market positions for a specific user, including borrow and supply amounts.
-#' This is critical for calculating actual Weighted Average LTV (WA LTV).
-#'
-#' @param user_address Character. Ethereum address of the user
-#' @param chain_id Integer. Optional specific chain ID. If NULL, scans all chains.
-#' @param verbose Logical. Print progress (default: TRUE)
-#'
-#' @return A tibble with user's positions across markets
-#' @export
-get_user_market_positions_v1 <- function(user_address, chain_id = NULL, verbose = TRUE) {
-
-  if (!.is_valid_address(user_address)) {
-    stop("Invalid Ethereum address format: ", user_address)
-  }
-
-  # If chain_id is provided, use it directly
-  if (!is.null(chain_id)) {
-    if (verbose) cat("🔍 Checking chain", chain_id, "...\n")
-    return(.fetch_user_market_positions_v1(user_address, chain_id))
-  }
-
-  # Auto-scan all chains
-  if (verbose) cat("🔍 Scanning all chains for user:", user_address, "\n")
-
-  all_chains <- as.numeric(names(CHAIN_NAMES))
-
-  for (cid in all_chains) {
-    if (verbose) cat("  Checking chain", cid, "(", CHAIN_NAMES[as.character(cid)], ")...\n")
-
-    result <- tryCatch({
-      .fetch_user_market_positions_v1(user_address, cid)
-    }, error = function(e) NULL)
-
-    if (!is.null(result) && nrow(result) > 0) {
-      if (verbose) cat("  ✅ Found positions on chain", cid, "\n")
-      attr(result, "chain_id") <- cid
-      return(result)
-    }
-  }
-
-  if (verbose) cat("  ❌ No positions found on any chain\n")
-  tibble()
-}
-
-#' Internal function to fetch user market positions for a specific chain
-#'
-#' @param user_address Character. Ethereum address of the user
-#' @param chain_id Integer. Chain ID
-#' @return A tibble with user's positions
-#' @keywords internal
-.fetch_user_market_positions_v1 <- function(user_address, chain_id) {
-
-  query <- '
-  query GetUserMarketPositions($address: String!, $chainId: Int!) {
-    userByAddress(address: $address, chainId: $chainId) {
-      marketPositions {
-        market {
-          uniqueKey
-        }
-        borrowAssets
-        borrowAssetsUsd
-        supplyAssets
-        supplyAssetsUsd
-      }
-    }
-  }
-  '
-
-  variables <- list(
-    address = user_address,
-    chainId = chain_id
-  )
-
-  result <- tryCatch({
-    .execute_query(query, variables)
-  }, error = function(e) NULL)
-
-  if (is.null(result) || is.null(result$data$userByAddress$marketPositions)) {
-    return(tibble())
-  }
-
-  positions <- result$data$userByAddress$marketPositions
-
-  if (length(positions) == 0) {
-    return(tibble())
-  }
-
-  map_dfr(positions, function(p) {
-    borrow_assets <- as.numeric(p$borrowAssets %||% 0)
-    supply_assets <- as.numeric(p$supplyAssets %||% 0)
-
-    tibble(
-      market_key = p$market$uniqueKey,
-      borrow_assets = borrow_assets,
-      borrow_usd = as.numeric(p$borrowAssetsUsd %||% 0),
-      supply_assets = supply_assets,
-      supply_usd = as.numeric(p$supplyAssetsUsd %||% 0),
-      position_ltv = ifelse(supply_assets > 0,
-                            borrow_assets / supply_assets,
-                            NA_real_)  # NA for borrow-only positions
-    )
-  })
-}
-
-
-#' Get all depositors for a vault and fetch their market positions (V1)
-#'
-#' @description
-#' For a given vault, fetches all top depositors and then retrieves their
-#' market positions to calculate actual Weighted Average LTV (WA LTV) per market.
-#'
-#' @param vault_address Character. Vault address
-#' @param chain_id Integer. Optional specific chain ID. If NULL, scans all chains.
-#' @param max_depositors Integer. Maximum number of depositors to process (default: 50)
-#' @param verbose Logical. Print progress (default: TRUE)
-#' @param min_supply_usd Numeric. Minimum supply amount to include (default: 1.0)
-#'
-#' @return A tibble with position-level LTV data across all markets
-#' @export
-get_vault_position_ltvs_v1 <- function(vault_address, chain_id = NULL, max_depositors = 20,
-                                       verbose = TRUE, min_supply_usd = 1.0) {
-
-  if (!.is_valid_address(vault_address)) {
-    stop("Invalid Ethereum address format: ", vault_address)
-  }
-
-  if (verbose) cat("   Fetching depositors for vault", substr(vault_address, 1, 10), "...\n")
-
-  # Get depositors (with auto-chain detection)
-  depositors <- get_vault_v1_depositors(vault_address, first = max_depositors,
-                                        chain_id = chain_id, verbose = verbose)
-
-  if (nrow(depositors) == 0) {
-    if (verbose) cat("   No depositors found\n")
-    return(tibble())
-  }
-
-  # Extract the chain_id where depositors were found
-  found_chain_id <- attr(depositors, "chain_id") %||% chain_id %||% 1
-
-  if (verbose) cat("   Processing", nrow(depositors), "depositors on chain", found_chain_id, "...\n")
-
-  all_positions <- map_dfr(1:nrow(depositors), function(i) {
-    if (verbose && i %% 10 == 0) cat("     Processed", i, "depositors\n")
-
-    user_addr <- depositors$user_address[i]
-
-    positions <- tryCatch({
-      get_user_market_positions_v1(user_addr, chain_id = found_chain_id, verbose = FALSE)
-    }, error = function(e) NULL)
-
-    if (!is.null(positions) && nrow(positions) > 0) {
-      positions %>%
-        mutate(
-          user_address = user_addr,
-          deposit_in_vault = depositors$assets_usd[i]
-        ) %>%
-        # Only include positions with meaningful supply
-        filter(supply_usd >= min_supply_usd) %>%
-        # Only include positions with valid LTV (not NA)
-        filter(!is.na(position_ltv))
-    } else {
-      NULL
-    }
-  })
-
-  if (verbose) cat("   Collected", nrow(all_positions), "meaningful positions (≥ $", min_supply_usd, ")\n")
-
-  attr(all_positions, "chain_id") <- found_chain_id
-  all_positions
-}
-
-#' Calculate Weighted Average LTV (WA LTV) for all markets in a vault
-#'
-#' @description
-#' Calculates market-level WA LTV using ONLY positions with actual borrowing (LTV > 0).
-#' Positions with LTV = 0 (supply-only) are excluded as they don't contribute to LTV risk.
-#'
-#' @param vault_address Character. Vault address
-#' @param chain_id Integer. Optional specific chain ID. If NULL, scans all chains.
-#' @param max_depositors Integer. Maximum number of depositors to process (default: 50)
-#' @param verbose Logical. Print progress (default: TRUE)
-#' @param min_supply_usd Numeric. Minimum supply to include in calculation (default: 1.0)
-#' @param min_ltv_threshold Numeric. Minimum LTV to consider (default: 0.01, i.e., 1%)
-#'
-#' @return A tibble with WA LTV by market (ONLY markets with actual borrowing)
-#' @export
-calculate_market_wa_ltv <- function(vault_address, chain_id = NULL, max_depositors = 20,
-                                    verbose = TRUE, min_supply_usd = 1.0,
-                                    min_ltv_threshold = 0.01) {
-
-  # Fetch positions with minimum supply threshold (auto-detects chain)
-  positions <- get_vault_position_ltvs_v1(
-    vault_address,
-    chain_id = chain_id,
-    max_depositors = max_depositors,
-    verbose = verbose,
-    min_supply_usd = min_supply_usd
-  )
-
-  if (nrow(positions) == 0) {
-    if (verbose) cat("\n⚠️ No positions with meaningful supply (≥ $", min_supply_usd, ") found\n", sep = "")
-    return(tibble(
-      market_key = character(),
-      n_borrowers = integer(),
-      n_total_users = integer(),
-      total_supply_usd = numeric(),
-      total_borrow_usd = numeric(),
-      wa_ltv = numeric(),
-      utilization = numeric(),
-      wa_ltv_formatted = character(),
-      utilization_formatted = character(),
-      confidence = character(),
-      note = paste0("No positions with supply ≥ $", min_supply_usd)
-    ))
-  }
-
-  # Step 1: Filter to ONLY positions with LTV > threshold (actual borrowing)
-  positions_with_borrow <- positions %>%
-    filter(position_ltv >= min_ltv_threshold)
-
-  if (nrow(positions_with_borrow) == 0) {
-    if (verbose) cat("\nℹ️ No borrowing positions found (all LTV = 0)\n")
-    return(tibble(
-      market_key = character(),
-      n_borrowers = integer(),
-      n_total_users = integer(),
-      total_supply_usd = numeric(),
-      total_borrow_usd = numeric(),
-      wa_ltv = numeric(),
-      utilization = numeric(),
-      wa_ltv_formatted = character(),
-      utilization_formatted = character(),
-      confidence = character(),
-      note = "No borrowing activity - all positions are supply-only"
-    ))
-  }
-
-  # Step 2: Calculate user-level aggregates (only for users with borrowing)
-  # But we need their TOTAL supply across ALL markets for correct LTV
-  users_with_borrow <- unique(positions_with_borrow$user_address)
-
-  user_totals <- positions %>%
-    filter(user_address %in% users_with_borrow) %>%  # Include ALL positions of these users
-    group_by(user_address) %>%
-    summarise(
-      total_user_supply_usd = sum(supply_usd, na.rm = TRUE),
-      total_user_borrow_usd = sum(borrow_usd, na.rm = TRUE),
-      total_user_deposit = sum(deposit_in_vault, na.rm = TRUE),
-      user_ltv = total_user_borrow_usd / total_user_supply_usd,  # Will be >0 by construction
-      .groups = "drop"
-    )
-
-  # Step 3: Join user LTV back to borrowing positions
-  positions_with_user_ltv <- positions_with_borrow %>%
-    left_join(user_totals %>% select(user_address, user_ltv), by = "user_address")
-
-  # Step 4: Calculate market-level WA LTV (ONLY for markets with borrowing)
-  market_wa_ltv <- positions_with_user_ltv %>%
-    group_by(market_key) %>%
-    summarise(
-      n_borrowers = n_distinct(user_address),
-      n_total_users = length(users_with_borrow),  # Total borrowers across all markets
-      total_supply_usd = sum(supply_usd, na.rm = TRUE),  # Supply in THIS market from borrowers
-      total_borrow_usd = sum(borrow_usd, na.rm = TRUE),  # Borrow in THIS market
-
-      # WA LTV: weighted by supply in this market, using user's global LTV
-      wa_ltv = sum(user_ltv * supply_usd, na.rm = TRUE) / sum(supply_usd, na.rm = TRUE),
-
-      # Market utilization (borrow/supply in this market only)
-      utilization = total_borrow_usd / total_supply_usd,
-      .groups = "drop"
-    ) %>%
-    mutate(
-      wa_ltv = round(wa_ltv, 4),
-      utilization = round(utilization, 4),
-      wa_ltv_formatted = paste0(round(wa_ltv * 100, 1), "%"),
-      utilization_formatted = paste0(round(utilization * 100, 1), "%"),
-      confidence = case_when(
-        n_borrowers >= 10 ~ "High",
-        n_borrowers >= 5 ~ "Medium",
-        n_borrowers >= 1 ~ "Low",
-        TRUE ~ "Very Low"
-      ),
-      risk_flag = case_when(
-        wa_ltv > 0.9 ~ "🔴 CRITICAL",
-        wa_ltv > 0.75 ~ "🟠 HIGH",
-        wa_ltv > 0.6 ~ "🟡 MEDIUM",
-        wa_ltv > 0 ~ "🟢 LOW",
-        TRUE ~ "⚪ NONE"
-      )
-    ) %>%
-    arrange(desc(wa_ltv))
-
-  # Show summary
-  if (verbose) {
-    cat("\n📊 WA LTV Summary (BORROWING POSITIONS ONLY):\n")
-    cat("   Total borrowers analyzed:", length(users_with_borrow), "\n")
-    cat("   Markets with borrowing activity:", nrow(market_wa_ltv), "\n")
-    cat("   Total supply from borrowers: $", format(round(sum(market_wa_ltv$total_supply_usd), 0), big.mark = ","), "\n")
-    cat("   Total borrow: $", format(round(sum(market_wa_ltv$total_borrow_usd), 0), big.mark = ","), "\n")
-    cat("   Average WA LTV (weighted by supply):",
-        round(weighted.mean(market_wa_ltv$wa_ltv, market_wa_ltv$total_supply_usd, na.rm = TRUE) * 100, 1), "%\n")
-  }
-
-  attr(market_wa_ltv, "chain_id") <- attr(positions, "chain_id")
-  market_wa_ltv
-}
-
-#' Get a summary of top Vault V1s by TVL
-#'
-#' @description
-#' Retrieves a formatted summary of the largest Vault V1s by TVL,
-#' including key metrics like share price and market count.
-#'
-#' @param n Integer. Number of top vaults to return (default: 10)
-#' @param chain_ids Integer vector. Filter by chain IDs (default: c(1, 8453))
-#' @param human_readable Logical. Include formatted columns (default: TRUE)
-#'
-#' @return A tibble with top V1 vaults (with print method)
-#' @export
-get_vault_v1_summary <- function(n = 10, chain_ids = c(1, 8453), human_readable = TRUE) {
-
-  vaults <- get_vault_v1_list(first = 200, chain_ids = chain_ids,
-                              human_readable = human_readable)
-
-  # Get allocation data to add market counts
-  allocations <- tryCatch({
-    get_vault_v1_allocations(first = 200, chain_ids = chain_ids)
-  }, error = function(e) NULL)
-
-  # Calculate market counts per vault
-  market_counts <- if (!is.null(allocations)) {
-    allocations %>%
-      group_by(vault_address) %>%
-      summarise(n_markets = n(), .groups = "drop")
-  } else {
-    tibble(vault_address = character(), n_markets = integer())
-  }
-
-  result <- vaults %>%
-    left_join(market_counts, by = "vault_address") %>%
-    mutate(n_markets = coalesce(n_markets, 0L)) %>%
-    select(
-      vault_address,
-      name,
-      symbol,
-      chain_network,
-      tvl_formatted,
-      tvl_billions,
-      share_price_formatted,
-      n_markets,
-      curator
-    ) %>%
-    arrange(desc(tvl_billions)) %>%
-    head(n) %>%
-    mutate(rank = row_number()) %>%
-    select(rank, everything())
-
-  class(result) <- c("vault_v1_summary", class(result))
-  return(result)
-}
-
-#' Print method for V1 vault summary
-#' @export
-print.vault_v1_summary <- function(x, ...) {
-  cat("\n", paste(rep("=", 80), collapse = ""), "\n")
-  cat("🏆 TOP", nrow(x), "VAULT V1s BY TVL\n")
-  cat(paste(rep("=", 80), collapse = ""), "\n")
-
-  for (i in 1:nrow(x)) {
-    cat(sprintf("%2d. %-35s: %s - %s (%d markets, %s)\n",
-                x$rank[i],
-                substr(x$name[i], 1, 35),
-                x$tvl_formatted[i],
-                x$share_price_formatted[i],
-                x$n_markets[i],
-                x$curator[i] %||% "Unknown"))
-  }
-
-  cat(paste(rep("=", 80), collapse = ""), "\n")
-  invisible(x)
-}
-
 #' Get Positioning Data from Morpho Vaults (BTC Markets)
 #'
 #' @description
@@ -1605,16 +785,18 @@ print.vault_v1_summary <- function(x, ...) {
 #' @param chain_ids Integer vector. Chain IDs to query (default: c(1, 8453) - Ethereum and Base)
 #' @param min_exposure_usd Numeric. Minimum BTC exposure in USD to consider a vault (default: 1e5, i.e., $100k)
 #' @param include_depositors Logical. Whether to fetch top depositors (slower) (default: FALSE)
-#' @param top_n_vaults Integer. Number of top vaults to fetch depositors for (default: 3)
+#' @param include_flows Logical. Whether to fetch transaction data (up to 1000 tx) (default: FALSE)
+#' @param top_n_vaults Integer. Number of top vaults to fetch depositors/flows for (default: 3)
 #' @param max_depositors_per_vault Integer. Maximum number of depositors to fetch per vault (default: 10)
 #' @param human_readable Logical. Include formatted columns (default: TRUE)
 #'
 #' @return A list object of class \code{morpho_positioning_data}
 #' @export
 get_morpho_positioning <- function(chain_ids = c(1, 8453),
-                                   min_exposure_usd = 1e7,
+                                   min_exposure_usd = 1e5,
                                    include_depositors = FALSE,
-                                   top_n_vaults = 5,
+                                   include_flows = FALSE,
+                                   top_n_vaults = 10,
                                    max_depositors_per_vault = 20,
                                    human_readable = TRUE) {
 
@@ -1626,7 +808,7 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
   result <- list(
     timestamp = Sys.time(),
     chain_ids = chain_ids,
-    status = "pending",
+    status = "success",
     warnings = character(),
     errors = character()
   )
@@ -1716,17 +898,18 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
           btc_collateral_vaults <- btc_exposed_allocations %>%
             dplyr::left_join(
               all_vaults %>%
-                dplyr::select(vault_address, name, chain_network, total_assets_usd, tvl_formatted, asset_symbol),
+                dplyr::select(vault_address, name, chain_network, total_assets_usd, tvl_formatted, asset_symbol, share_price_usd),
               by = "vault_address"
             ) %>%
             dplyr::mutate(
               exposure_type = "BTC-Collateralized Lending",
               deposit_asset = asset_symbol,
-              btc_exposure_pct = pmin(btc_exposure_pct, 100)  # Cap at 100%
+              btc_exposure_pct = pmin(btc_exposure_pct, 100)
             ) %>%
             dplyr::select(
               vault_address, name, chain_network, exposure_type, deposit_asset,
-              total_assets_usd, tvl_formatted, btc_exposure_usd, btc_exposure_pct, n_btc_markets
+              total_assets_usd, tvl_formatted, btc_exposure_usd, btc_exposure_pct, n_btc_markets,
+              share_price_usd
             )
         }
       }
@@ -1758,20 +941,230 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
     total_btc_exposure_usd <- sum(all_btc_vaults$btc_exposure_usd, na.rm = TRUE)
 
     # Categorize vaults by size
-    n_large_vaults <- sum(all_btc_vaults$total_assets_usd > 100e6, na.rm = TRUE)      # > $100M
+    n_large_vaults <- sum(all_btc_vaults$total_assets_usd > 100e6, na.rm = TRUE)
     n_medium_vaults <- sum(all_btc_vaults$total_assets_usd > 10e6 &
-                             all_btc_vaults$total_assets_usd <= 100e6, na.rm = TRUE)    # $10M-$100M
-    n_small_vaults <- sum(all_btc_vaults$total_assets_usd <= 10e6, na.rm = TRUE)       # < $10M
+                             all_btc_vaults$total_assets_usd <= 100e6, na.rm = TRUE)
+    n_small_vaults <- sum(all_btc_vaults$total_assets_usd <= 10e6, na.rm = TRUE)
 
     # Determine whale signal
     whale_signal <- dplyr::case_when(
       n_large_vaults >= 1 ~ paste0("High Whale Intensity (", n_large_vaults,
-                                   " vault", ifelse(n_large_vaults > 1, "s > $100M", " > $100M")),
+                                   " vault", ifelse(n_large_vaults > 1, "s > $100M", " > $100M)")),
       n_medium_vaults >= 3 ~ paste0("Moderate Whale Activity (", n_medium_vaults, " vaults $10M-$100M)"),
       n_medium_vaults >= 1 ~ "Normal Whale Activity",
       total_btc_exposure_usd > 1e6 ~ "Low Whale Activity",
       TRUE ~ "Minimal Activity"
     )
+
+    #---------------------------------------------------------------------------
+    # FETCH TOP DEPOSITORS FOR MULTIPLE VAULTS (Optional, slower)
+    #---------------------------------------------------------------------------
+    all_top_depositors <- NULL
+    if (include_depositors && nrow(all_btc_vaults) > 0) {
+
+      n_vaults_to_process <- min(top_n_vaults, nrow(all_btc_vaults))
+      message("  🔍 Fetching top depositors for top ", n_vaults_to_process, " BTC vaults...")
+
+      depositor_list <- list()
+
+      for (i in 1:n_vaults_to_process) {
+        vault_addr <- all_btc_vaults$vault_address[i]
+        vault_name <- all_btc_vaults$name[i]
+        vault_tvl <- all_btc_vaults$total_assets_usd[i]
+
+        depositors <- tryCatch({
+          get_vault_v1_depositors(
+            vault_addr,
+            first = max_depositors_per_vault,
+            verbose = FALSE
+          )
+        }, error = function(e) {
+          message("      Error fetching depositors for ", vault_name, ": ", e$message)
+          NULL
+        })
+
+        if (!is.null(depositors) && nrow(depositors) > 0) {
+          depositor_list[[i]] <- depositors %>%
+            dplyr::mutate(
+              vault_address = vault_addr,
+              vault_name = vault_name,
+              vault_tvl = vault_tvl,
+              vault_rank = i
+            ) %>%
+            dplyr::select(
+              vault_rank, vault_name, vault_tvl,
+              user_address, assets_usd, share_pct
+            ) %>%
+            dplyr::arrange(dplyr::desc(assets_usd))
+
+          message("      Found ", nrow(depositor_list[[i]]), " depositors for ", vault_name)
+        }
+      }
+
+      if (length(depositor_list) > 0) {
+        all_top_depositors <- dplyr::bind_rows(depositor_list)
+
+        all_top_depositors <- all_top_depositors %>%
+          dplyr::mutate(
+            whale_size = dplyr::case_when(
+              assets_usd > 10e6 ~ "🐋 Mega Whale (>$10M)",
+              assets_usd > 1e6 ~ "🐋 Whale ($1M-$10M)",
+              assets_usd > 100e3 ~ "🐟 Dolphin ($100k-$1M)",
+              TRUE ~ "🦐 Retail (<$100k)"
+            )
+          )
+
+        message("  ✅ Total depositors collected: ", nrow(all_top_depositors))
+      }
+    }
+
+    #---------------------------------------------------------------------------
+    # FETCH TRANSACTIONS FOR TOP VAULTS (Optional, slower)
+    #---------------------------------------------------------------------------
+    vault_flows <- NULL
+    if (include_flows && nrow(all_btc_vaults) > 0) {
+
+      n_vaults_to_process <- min(top_n_vaults, nrow(all_btc_vaults))
+      message("  📊 Fetching up to 1000 transactions for top ", n_vaults_to_process, " BTC vaults...")
+
+      flow_list <- list()
+
+      for (i in 1:n_vaults_to_process) {
+        vault_addr <- all_btc_vaults$vault_address[i]
+        vault_name <- all_btc_vaults$name[i]
+        vault_tvl <- all_btc_vaults$total_assets_usd[i]
+        share_price <- all_btc_vaults$share_price_usd[i]
+
+        message("    Processing: ", vault_name, " ($", format(round(vault_tvl / 1e6, 1), big.mark = ","), "M)")
+
+        # Fetch up to 1000 transactions
+        all_txns <- tryCatch({
+          get_vault_v1_transactions(
+            vault_address = vault_addr,
+            first = 1000,  # Max allowed
+            skip = 0
+          )
+        }, error = function(e) {
+          message("      Error fetching transactions: ", e$message)
+          NULL
+        })
+
+        if (!is.null(all_txns) && nrow(all_txns) > 0) {
+
+          # Get the actual date range of the transactions
+          oldest_tx <- min(all_txns$timestamp, na.rm = TRUE)
+          newest_tx <- max(all_txns$timestamp, na.rm = TRUE)
+          days_covered <- as.numeric(difftime(newest_tx, oldest_tx, units = "days"))
+
+          # Calculate flows
+          inflow <- all_txns %>%
+            dplyr::filter(grepl("Deposit", type, ignore.case = TRUE)) %>%
+            dplyr::pull(assets) %>%
+            sum(na.rm = TRUE)
+
+          outflow <- all_txns %>%
+            dplyr::filter(grepl("Withdraw", type, ignore.case = TRUE)) %>%
+            dplyr::pull(assets) %>%
+            sum(na.rm = TRUE)
+
+          deposit_count <- all_txns %>%
+            dplyr::filter(grepl("Deposit", type, ignore.case = TRUE)) %>%
+            nrow()
+
+          withdraw_count <- all_txns %>%
+            dplyr::filter(grepl("Withdraw", type, ignore.case = TRUE)) %>%
+            nrow()
+
+          if (!is.na(share_price) && share_price > 0) {
+            inflow_usd <- inflow * share_price
+            outflow_usd <- outflow * share_price
+            netflow_usd <- inflow_usd - outflow_usd
+            netflow_pct <- (netflow_usd / vault_tvl) * 100
+          } else {
+            inflow_usd <- NA_real_
+            outflow_usd <- NA_real_
+            netflow_usd <- NA_real_
+            netflow_pct <- NA_real_
+          }
+
+          flow_list[[i]] <- data.frame(
+            vault_rank = i,
+            vault_address = vault_addr,
+            vault_name = vault_name,
+            tx_count = nrow(all_txns),
+            deposit_count = deposit_count,
+            withdraw_count = withdraw_count,
+            oldest_tx_date = oldest_tx,
+            newest_tx_date = newest_tx,
+            days_covered = round(days_covered, 1),
+            inflow_units = inflow,
+            outflow_units = outflow,
+            netflow_units = inflow - outflow,
+            inflow_usd = inflow_usd,
+            outflow_usd = outflow_usd,
+            netflow_usd = netflow_usd,
+            netflow_pct = netflow_pct,
+            vault_tvl_usd = vault_tvl,
+            share_price_usd = share_price,
+            stringsAsFactors = FALSE
+          )
+
+          if (!is.na(netflow_usd)) {
+            message("      Fetched ", nrow(all_txns), " transactions (", days_covered, " days) | Net flow: $",
+                    format(round(netflow_usd / 1e6, 2), big.mark = ","), "M (",
+                    round(netflow_pct, 1), "%)")
+          } else {
+            message("      Fetched ", nrow(all_txns), " transactions (", days_covered, " days) | Net flow: ",
+                    round((inflow - outflow) / 1e6, 2), "M units")
+          }
+        } else {
+          message("      No transaction history found")
+        }
+      }
+
+      if (length(flow_list) > 0) {
+        vault_flows <- dplyr::bind_rows(flow_list) %>%
+          dplyr::mutate(
+            flow_direction = dplyr::case_when(
+              !is.na(netflow_pct) & netflow_pct > 10 ~ "🚀 Strong Inflow",
+              !is.na(netflow_pct) & netflow_pct > 2 ~ "📈 Inflow",
+              !is.na(netflow_pct) & netflow_pct < -10 ~ "💥 Strong Outflow",
+              !is.na(netflow_pct) & netflow_pct < -2 ~ "📉 Outflow",
+              !is.na(netflow_pct) ~ "⚖️ Neutral",
+              TRUE ~ "📊 Units Only"
+            ),
+            inflow_formatted = dplyr::case_when(
+              !is.na(inflow_usd) ~ paste0("$", format(round(inflow_usd / 1e6, 2), big.mark = ","), "M"),
+              TRUE ~ paste0(format(round(inflow_units / 1e6, 2), big.mark = ","), "M units")
+            ),
+            outflow_formatted = dplyr::case_when(
+              !is.na(outflow_usd) ~ paste0("$", format(round(outflow_usd / 1e6, 2), big.mark = ","), "M"),
+              TRUE ~ paste0(format(round(outflow_units / 1e6, 2), big.mark = ","), "M units")
+            ),
+            netflow_formatted = dplyr::case_when(
+              !is.na(netflow_usd) ~ paste0(
+                ifelse(netflow_usd > 0, "+", ""),
+                "$", format(round(netflow_usd / 1e6, 2), big.mark = ","), "M"
+              ),
+              TRUE ~ paste0(
+                ifelse(netflow_units > 0, "+", ""),
+                format(round(netflow_units / 1e6, 2), big.mark = ","), "M units"
+              )
+            ),
+            netflow_pct_formatted = ifelse(
+              !is.na(netflow_pct),
+              paste0(ifelse(netflow_pct > 0, "+", ""), round(netflow_pct, 1), "%"),
+              "N/A"
+            ),
+            date_range = paste0(
+              format(oldest_tx_date, "%Y-%m-%d"), " to ",
+              format(newest_tx_date, "%Y-%m-%d"), " (", days_covered, " days)"
+            )
+          )
+
+        message("  ✅ Flow data collected for ", nrow(vault_flows), " vaults")
+      }
+    }
 
     #---------------------------------------------------------------------------
     # IDENTIFY TOP VAULTS
@@ -1792,81 +1185,13 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
       )
 
     #---------------------------------------------------------------------------
-    # FETCH TOP DEPOSITORS FOR MULTIPLE VAULTS (Optional, slower)
-    #---------------------------------------------------------------------------
-    all_top_depositors <- NULL
-    if (include_depositors && nrow(all_btc_vaults) > 0) {
-
-      # Determine how many vaults to process
-      n_vaults_to_process <- min(top_n_vaults, nrow(all_btc_vaults))
-      message("  🔍 Fetching top depositors for top ", n_vaults_to_process, " BTC vaults...")
-
-      depositor_list <- list()
-
-      for (i in 1:n_vaults_to_process) {
-        vault_addr <- all_btc_vaults$vault_address[i]
-        vault_name <- all_btc_vaults$name[i]
-        vault_tvl <- all_btc_vaults$total_assets_usd[i]
-
-        message("    Processing: ", vault_name, " ($", format(round(vault_tvl / 1e6, 1), big.mark = ","), "M)")
-
-        depositors <- tryCatch({
-          get_vault_v1_depositors(
-            vault_addr,
-            first = max_depositors_per_vault,
-            verbose = FALSE
-          )
-        }, error = function(e) {
-          message("      Error fetching depositors: ", e$message)
-          NULL
-        })
-
-        if (!is.null(depositors) && nrow(depositors) > 0) {
-          depositor_list[[i]] <- depositors %>%
-            dplyr::mutate(
-              vault_address = vault_addr,
-              vault_name = vault_name,
-              vault_tvl = vault_tvl,
-              vault_rank = i
-            ) %>%
-            dplyr::select(
-              vault_rank, vault_name, vault_tvl,
-              user_address, assets_usd, share_pct
-            ) %>%
-            dplyr::arrange(dplyr::desc(assets_usd))
-
-          message("      Found ", nrow(depositor_list[[i]]), " depositors")
-        }
-      }
-
-      if (length(depositor_list) > 0) {
-        all_top_depositors <- dplyr::bind_rows(depositor_list)
-
-        # Add whale classification per depositor
-        all_top_depositors <- all_top_depositors %>%
-          dplyr::mutate(
-            whale_size = dplyr::case_when(
-              assets_usd > 10e6 ~ "🐋 Mega Whale (>$10M)",
-              assets_usd > 1e6 ~ "🐋 Whale ($1M-$10M)",
-              assets_usd > 100e3 ~ "🐟 Dolphin ($100k-$1M)",
-              TRUE ~ "🦐 Retail (<$100k)"
-            )
-          )
-
-        message("  ✅ Total depositors collected: ", nrow(all_top_depositors))
-      }
-    }
-
-    #---------------------------------------------------------------------------
     # CALCULATE WHALE CONCENTRATION METRICS
     #---------------------------------------------------------------------------
     whale_concentration <- NULL
     if (!is.null(all_top_depositors) && nrow(all_top_depositors) > 0) {
 
-      # Calculate Herfindahl-Hirschman Index (HHI) for market concentration
-      # HHI = sum of squared market shares (0-10000 scale)
-      shares_sq <- sum((all_top_depositors$share_pct)^2, na.rm = TRUE)
-      hhi <- shares_sq * 100  # Scale to 0-10000
+      shares_sq <- sum((all_top_depositors$share_pct / 100)^2, na.rm = TRUE)
+      hhi <- shares_sq * 10000
 
       whale_concentration <- list(
         total_whale_wallets = length(unique(all_top_depositors$user_address)),
@@ -1907,6 +1232,7 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
 
     result$top_vaults <- top_vaults
     result$top_depositors <- all_top_depositors
+    result$vault_flows <- vault_flows
     result$whale_concentration <- whale_concentration
     result$raw_allocations <- allocations
     result$status <- "success"
@@ -1927,9 +1253,72 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
       )
     }
 
+    if (!is.null(vault_flows)) {
+      vaults_with_usd <- vault_flows %>% dplyr::filter(!is.na(netflow_usd))
+
+      if (nrow(vaults_with_usd) > 0) {
+        total_inflow <- sum(vaults_with_usd$inflow_usd, na.rm = TRUE)
+        total_outflow <- sum(vaults_with_usd$outflow_usd, na.rm = TRUE)
+        net_flow_usd <- total_inflow - total_outflow
+        total_tvl <- sum(vaults_with_usd$vault_tvl_usd, na.rm = TRUE)
+        net_flow_pct <- (net_flow_usd / total_tvl) * 100
+
+        # Get date range for the flow data
+        min_date <- min(vault_flows$oldest_tx_date, na.rm = TRUE)
+        max_date <- max(vault_flows$newest_tx_date, na.rm = TRUE)
+
+        flow_regime <- dplyr::case_when(
+          net_flow_pct > 10 ~ "Strong Inflows (Accumulation)",
+          net_flow_pct > 2 ~ "Moderate Inflows",
+          net_flow_pct < -10 ~ "Strong Outflows (Distribution)",
+          net_flow_pct < -2 ~ "Moderate Outflows",
+          TRUE ~ "Neutral"
+        )
+
+        result$flow_summary <- list(
+          total_inflow_usd = total_inflow,
+          total_outflow_usd = total_outflow,
+          net_flow_usd = net_flow_usd,
+          net_flow_pct = net_flow_pct,
+          flow_regime = flow_regime,
+          min_date = min_date,
+          max_date = max_date,
+          total_transactions = sum(vault_flows$tx_count),
+          vaults_with_usd = nrow(vaults_with_usd)
+        )
+
+        result$interpretation <- paste0(
+          result$interpretation, " Transaction analysis covers ",
+          format(min_date, "%Y-%m-%d"), " to ", format(max_date, "%Y-%m-%d"), ". ",
+          "Net flow: ", if (net_flow_usd > 0) "+" else "",
+          "$", format(round(net_flow_usd / 1e6, 1), big.mark = ","), "M (",
+          round(net_flow_pct, 1), "%, ", flow_regime, ")."
+        )
+      } else {
+        # Get date range even for units-only data
+        min_date <- min(vault_flows$oldest_tx_date, na.rm = TRUE)
+        max_date <- max(vault_flows$newest_tx_date, na.rm = TRUE)
+
+        result$flow_summary <- list(
+          note = "Flow data available in units only (no share price)",
+          min_date = min_date,
+          max_date = max_date,
+          total_transactions = sum(vault_flows$tx_count),
+          vaults_with_units = nrow(vault_flows)
+        )
+
+        result$interpretation <- paste0(
+          result$interpretation, " Transaction analysis covers ",
+          format(min_date, "%Y-%m-%d"), " to ", format(max_date, "%Y-%m-%d"), ". ",
+          "Net flow data available in units only (share price unavailable)."
+        )
+      }
+    }
+
   }, error = function(e) {
     result$errors <- c(result$errors, paste("Error fetching data:", e$message))
     result$status <- "failed"
+    message("❌ Error: ", e$message)
   })
 
   #---------------------------------------------------------------------------
@@ -1968,6 +1357,45 @@ print.morpho_positioning_data <- function(x, ...) {
     cat("  • Small (<$10M):", x$whale_activity$small_vaults_count, "\n")
     cat("Largest Vault:", x$whale_activity$largest_vault, "\n")
 
+    #---------------------------------------------------------------------------
+    # FLOW ANALYSIS SECTION
+    #---------------------------------------------------------------------------
+    if (!is.null(x$vault_flows) && nrow(x$vault_flows) > 0) {
+      cat("\n", paste(rep("━", 80), collapse = ""), "\n")
+      cat("📈 TRANSACTION ANALYSIS\n")
+      cat(paste(rep("━", 80), collapse = ""), "\n")
+
+      # Show date range
+      min_date <- min(x$vault_flows$oldest_tx_date)
+      max_date <- max(x$vault_flows$newest_tx_date)
+      cat("Date Range:", format(min_date, "%Y-%m-%d"), "to", format(max_date, "%Y-%m-%d"), "\n")
+      cat("Total Transactions:", sum(x$vault_flows$tx_count), "\n\n")
+
+      if (!is.null(x$flow_summary$net_flow_usd)) {
+        cat("Aggregate Net Flow:",
+            ifelse(x$flow_summary$net_flow_usd > 0, "+", ""),
+            "$", format(round(x$flow_summary$net_flow_usd / 1e6, 2), big.mark = ","), "M\n", sep = "")
+        cat("Flow Regime:", x$flow_summary$flow_regime, "\n\n")
+      }
+
+      cat("Flow by Vault:\n")
+      flow_display <- x$vault_flows %>%
+        dplyr::mutate(
+          vault_display = paste0(vault_name, " (", flow_direction, ")"),
+          tx_info = paste0(tx_count, " tx (", days_covered, " days)")
+        ) %>%
+        dplyr::select(
+          Vault = vault_display,
+          `Net Flow` = netflow_formatted,
+          `% of TVL` = netflow_pct_formatted,
+          Transactions = tx_info
+        )
+      print(flow_display)
+    }
+
+    #---------------------------------------------------------------------------
+    # WHALE CONCENTRATION SECTION
+    #---------------------------------------------------------------------------
     if (!is.null(x$whale_concentration)) {
       cat("\n", paste(rep("━", 80), collapse = ""), "\n")
       cat("🐋 WHALE CONCENTRATION ANALYSIS\n")
@@ -1975,17 +1403,19 @@ print.morpho_positioning_data <- function(x, ...) {
       cat("Unique Whale Wallets:", x$whale_concentration$total_whale_wallets, "\n")
       cat("Mega Whales (>$10M):", x$whale_concentration$mega_whales, "\n")
       cat("Regular Whales ($1M-$10M):", x$whale_concentration$regular_whales, "\n")
-      cat("Market Concentration (HHI):", format(x$whale_concentration$hhi, scientific = FALSE),
+      cat("Market Concentration (HHI):", format(round(x$whale_concentration$hhi, 1), big.mark = ","),
           "(", x$whale_concentration$hhi_interpretation, ")\n")
       cat("Top 5 Depositors Share:", round(x$whale_concentration$top_5_share, 1), "%\n")
     }
 
+    #---------------------------------------------------------------------------
+    # TOP VAULTS SECTION
+    #---------------------------------------------------------------------------
     if (!is.null(x$top_vaults) && nrow(x$top_vaults) > 0) {
       cat("\n", paste(rep("━", 80), collapse = ""), "\n")
       cat("🏆 TOP BTC-EXPOSED VAULTS\n")
       cat(paste(rep("━", 80), collapse = ""), "\n")
 
-      # Format for better display
       top_vaults_display <- x$top_vaults %>%
         dplyr::mutate(
           btc_exposure_pct = paste0(round(btc_exposure_pct, 1), "%")
@@ -1993,6 +1423,9 @@ print.morpho_positioning_data <- function(x, ...) {
       print(top_vaults_display)
     }
 
+    #---------------------------------------------------------------------------
+    # TOP DEPOSITORS SECTION
+    #---------------------------------------------------------------------------
     if (!is.null(x$top_depositors) && nrow(x$top_depositors) > 0) {
       cat("\n", paste(rep("━", 80), collapse = ""), "\n")
       cat("👥 TOP DEPOSITORS ACROSS VAULTS (Whale Wallets)\n")
