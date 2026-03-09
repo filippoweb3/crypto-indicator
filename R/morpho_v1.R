@@ -1196,8 +1196,7 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
     whale_concentration <- NULL
     if (!is.null(all_top_depositors) && nrow(all_top_depositors) > 0) {
 
-      shares_sq <- sum((all_top_depositors$share_pct / 100)^2, na.rm = TRUE)
-      hhi <- shares_sq * 10000
+      hhi <- sum((all_top_depositors$share_pct)^2, na.rm = TRUE)
 
       whale_concentration <- list(
         total_whale_wallets = length(unique(all_top_depositors$user_address)),
