@@ -14,11 +14,6 @@
 #' @param fred_api_key Character string containing your FRED API key.
 #'   Default \code{NULL}. If provided, will be stored in global environment.
 #'   Register at \url{https://fred.stlouisfed.org/docs/api/api_key.html}
-#' @param whale_api_key Character string containing your Whale Alert API key.
-#'   Default \code{NULL}. If provided, will be stored in global environment.
-#'   Register at \url{https://whale-alert.io/api}
-#' @param include_google_trends Logical. If \code{TRUE}, fetches Google Trends
-#'   data for retail sentiment analysis. Default \code{TRUE}.
 #'
 #' @return A list object of class \code{crypto_framework} containing seven
 #'   main sections:
@@ -37,7 +32,8 @@
 #'     \item \code{market}: Output from \code{\link{get_market_data}}
 #'     \item \code{derivatives}: Output from \code{\link{get_derivatives}}
 #'     \item \code{macro}: Output from \code{\link{get_macro}}
-#'     \item \code{positioning}: Output from \code{\link{get_positioning}} (if requested)
+#'     \item \code{positioning}: Output from \code{\link{get_positioning}}
+#'     \item \code{sentiment}: Output from \code{\link{get_fear_greed}}
 #'   }
 #'
 #'   \strong{3. Indicators:}
@@ -52,7 +48,8 @@
 #'     \item \code{derivatives}: Funding regime, crowded trades, percentiles
 #'     \item \code{macro}: Liquidity, rates, dollar, composite risk
 #'     \item \code{volatility}: Regime, strategy setup, percentiles
-#'     \item \code{positioning}: Whale flows, sentiment, whale concentration, vault flows (if available)
+#'     \item \code{positioning}: Whale flows, whale concentration, vault flows
+#'     \item \code{sentiment}: Fear & Greed Index value and classification
 #'   }
 #'
 #'   \strong{5. Decisions:} Framework outputs by time horizon
@@ -64,7 +61,7 @@
 #'     \item \code{regime_allocation}: Market regime with specific positioning
 #'   }
 #'
-#'   \strong{6. Summary:} Actionable bullet points and quick reference (includes whale concentration and flow insights)
+#'   \strong{6. Summary:} Actionable bullet points and quick reference (includes whale concentration, flow insights, and sentiment)
 #'
 #' @details
 #' \strong{Framework Architecture}
@@ -92,9 +89,12 @@
 #'     trend following in low vol, mean reversion in high vol.}
 #'
 #'   \item{\strong{Positioning Module}}{Uses \code{\link{get_positioning}} to
-#'     track whale movements (smart money) and retail sentiment (Google Trends)
-#'     as contrarian indicators at extremes. When Morpho data is available, provides
-#'     enhanced intelligence on whale concentration, vault flows, and systemic risk.}
+#'     track whale activity through Morpho vaults, providing enhanced intelligence
+#'     on whale concentration, vault flows, and systemic risk.}
+#'
+#'   \item{\strong{Sentiment Module}}{Uses \code{\link{get_fear_greed}} to capture
+#'     market sentiment via the Crypto Fear & Greed Index, a contrarian indicator
+#'     at extremes.}
 #' }
 #'
 #' \strong{Decision Framework Methodology}
@@ -131,19 +131,19 @@
 #' \describe{
 #'   \item{\strong{GREEN} (Low Risk)}{
 #'     \itemize{
-#'       \item Conditions: Volatility normal, macro positive, no crowded trades, whale concentration low
+#'       \item Conditions: Volatility normal, macro positive, no crowded trades, whale concentration low, sentiment neutral
 #'       \item Actions: Maintain full positions, normal stop losses
 #'     }
 #'   }
 #'   \item{\strong{YELLOW} (Medium Risk)}{
 #'     \itemize{
-#'       \item Conditions: Elevated volatility OR negative macro OR crowded longs OR high whale concentration
+#'       \item Conditions: Elevated volatility OR negative macro OR crowded longs OR high whale concentration OR extreme sentiment
 #'       \item Actions: Reduce leverage, tighten stops, take partial profits
 #'     }
 #'   }
 #'   \item{\strong{RED} (High Risk)}{
 #'     \itemize{
-#'       \item Conditions: Extreme volatility (>1sd) OR severe macro headwinds (< -0.5) OR critical whale concentration (HHI >2500)
+#'       \item Conditions: Extreme volatility (>1sd) OR severe macro headwinds (< -0.5) OR critical whale concentration (HHI >2500) OR extreme greed/fear
 #'       \item Actions: Move to stablecoins, close leveraged positions, wait
 #'     }
 #'   }
@@ -190,11 +190,12 @@
 #' \itemize{
 #'   \item The framework is optimized for Bitcoin but can analyze other assets
 #'     with sufficient data (on-chain metrics like Puell are Bitcoin-specific)
-#'   \item API keys are stored in the global environment; manage them carefully
+#'   \item FRED API key is optional; without it, macro data will be unavailable
 #'   \item First run may be slow due to data caching and multiple API calls
 #'   \item Internet connection required for all data sources
 #'   \item Some indicators (e.g., Puell Multiple) are Bitcoin-specific
 #'   \item Morpho vault data provides enhanced whale intelligence without requiring API keys
+#'   \item Fear & Greed Index is fetched from alternative.me via cryptoQuotes
 #' }
 #'
 #' @section Expected Output:
@@ -211,11 +212,13 @@
 #'   ✅ Liquidity: Stable
 #' 📊 Calculating volatility metrics...
 #'   ✅ Volatility regime: Low
-#' 🐋 Fetching whale and sentiment data...
+#' 🐋 Fetching Morpho vault positioning data...
 #'   ✅ Enhanced Morpho intelligence loaded
 #'   ✅ Flow regime: Moderate Inflows
 #'   ✅ Whale activity: Moderate Activity
 #'   ✅ Whale concentration: Highly Concentrated
+#' 📈 Fetching Fear & Greed sentiment data...
+#'   ✅ Fear & Greed: 42 - Fear
 #' 🎯 Generating decision framework...
 #'
 #' ✅ Framework complete! Use print_crypto_summary() to view results
@@ -223,62 +226,38 @@
 #'
 #' @examples
 #' \dontrun{
-#' # Basic usage (Bitcoin only) - uses Morpho data automatically
+#' # Basic usage (Bitcoin only)
 #' result <- crypto_predictive_framework()
 #'
 #' # View summary
 #' print_crypto_summary(result)
 #'
-#' # With all data sources
+#' # With FRED API key
 #' result <- crypto_predictive_framework(
 #'   assets = c("Bitcoin"),
 #'   start_date = "2015-01-01",
-#'   fred_api_key = "your_fred_key",
-#'   whale_api_key = "your_whale_key",  # If NULL, uses Morpho
-#'   include_google_trends = TRUE
+#'   fred_api_key = "your_fred_key"
 #' )
 #'
 #' # Access specific components
 #' result$signals$onchain$mvrv$regime        # Current MVRV regime
+#' result$signals$sentiment$value            # Fear & Greed value
+#' result$signals$sentiment$classification   # Fear & Greed classification
 #' result$decisions$risk_off$color           # Risk level (GREEN/YELLOW/RED)
-#' result$decisions$regime_allocation$allocation$strategic  # Recommended allocation
 #'
-#' # Access enhanced Morpho intelligence (if available)
+#' # Access enhanced Morpho intelligence
 #' result$signals$positioning$whale_concentration$hhi_interpretation
 #' result$signals$positioning$vault_flows$flow_regime
-#' result$signals$positioning$whale_wallets$top_depositors
 #'
 #' # Extract for custom reporting
 #' report_data <- data.frame(
 #'   date = Sys.Date(),
 #'   mvrv = result$signals$onchain$mvrv$value,
 #'   mvrv_regime = result$signals$onchain$mvrv$regime,
-#'   risk_level = result$decisions$risk_off$color,
-#'   allocation = result$decisions$regime_allocation$allocation$strategic,
-#'   whale_concentration = ifelse(!is.null(result$signals$positioning$whale_concentration),
-#'                                result$signals$positioning$whale_concentration$hhi_interpretation,
-#'                                "N/A")
+#'   fear_greed = result$signals$sentiment$value,
+#'   fear_greed_class = result$signals$sentiment$classification,
+#'   risk_level = result$decisions$risk_off$color
 #' )
-#'
-#' # Run for Ethereum (limited on-chain metrics)
-#' eth_result <- crypto_predictive_framework(
-#'   assets = c("Ethereum"),
-#'   start_date = "2017-01-01"
-#' )
-#'
-#' # Compare multiple timeframes
-#' cat("Short-term:", result$decisions$short_term$momentum$signal, "\n")
-#' cat("Medium-term:", result$decisions$medium_term$trend$direction, "\n")
-#' cat("Long-term:", result$decisions$long_term$strategic$core_position, "\n")
-#' }
-#'
-#' @section Error Handling:
-#' The framework is designed to be resilient:
-#' \itemize{
-#'   \item If market data fails, the framework returns early with status "failed"
-#'   \item Other modules that fail generate warnings but don't stop execution
-#'   \item Missing data results in \code{NULL} values with appropriate warnings
-#'   \item API failures are caught and logged as warnings, not errors
 #' }
 #'
 #' @seealso
@@ -288,7 +267,8 @@
 #'   \item \code{\link{get_derivatives}} for derivatives analysis
 #'   \item \code{\link{get_macro}} for macroeconomic indicators
 #'   \item \code{\link{get_volatility}} for volatility regimes
-#'   \item \code{\link{get_positioning}} for whale and sentiment data
+#'   \item \code{\link{get_positioning}} for whale positioning data
+#'   \item \code{\link{get_fear_greed}} for sentiment data
 #'   \item \code{\link{print_crypto_summary}} for formatted output
 #' }
 #'
@@ -300,6 +280,7 @@
 #'   \item Binance Exchange (2024). "Perpetual Futures Guide"
 #'   \item Federal Reserve Economic Data (FRED): \url{https://fred.stlouisfed.org/}
 #'   \item Morpho Blue Documentation: \url{https://docs.morpho.org/}
+#'   \item Alternative.me Crypto Fear & Greed Index: \url{https://alternative.me/crypto/fear-and-greed-index/}
 #' }
 #'
 #' @author Filippo Franchini
@@ -309,9 +290,7 @@
 #' @importFrom utils head
 crypto_predictive_framework <- function(assets = c("Bitcoin"),
                                         start_date = "2015-01-01",
-                                        fred_api_key = NULL,
-                                        whale_api_key = NULL,
-                                        include_google_trends = TRUE) {
+                                        fred_api_key = NULL) {
 
   #---------------------------------------------------------------------------
   # NULL coalescing helper (for internal use)
@@ -338,12 +317,9 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     summary = list()
   )
 
-  # Set API keys if provided
+  # Set FRED API key if provided
   if (!is.null(fred_api_key)) {
     assign("fred_api_key", fred_api_key, envir = .GlobalEnv)
-  }
-  if (!is.null(whale_api_key)) {
-    assign("whaleAlert_api_key", whale_api_key, envir = .GlobalEnv)
   }
 
   #---------------------------------------------------------------------------
@@ -568,183 +544,181 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   })
 
   #---------------------------------------------------------------------------
-  # POSITIONING INDICATORS (Enhanced for Morpho Intelligence)
+  # POSITIONING INDICATORS (Morpho-based intelligence)
   #---------------------------------------------------------------------------
-  if (!is.null(whale_api_key) || include_google_trends) {
-    message("🐋 Fetching whale and sentiment data...")
+  message("🐋 Fetching Morpho vault positioning data...")
 
-    tryCatch({
-      pos_data <- get_positioning(
-        start_time = as.character(Sys.Date() - 7),
-        google_trends_keywords = c("bitcoin", "crypto", "blockchain"),
-        api_key = whale_api_key
+  tryCatch({
+    pos_data <- get_positioning()
+
+    if (is.list(pos_data) && !is.character(pos_data)) {
+      framework$raw_data$positioning <- pos_data
+
+      #-------------------------------------------------------------------------
+      # BASIC POSITIONING SIGNALS
+      #-------------------------------------------------------------------------
+      framework$signals$positioning <- list(
+        whale_flow = pos_data$exchange_positioning$flow_regime,
+        whale_activity = pos_data$whale_activity$whale_signal,
+
+        # Enhanced interpretation
+        whale_interpretation = dplyr::case_when(
+          grepl("Strong Inflows", pos_data$exchange_positioning$flow_regime) ~
+            "🚀 Strong inflows - capital entering DeFi",
+          grepl("Moderate Inflows", pos_data$exchange_positioning$flow_regime) ~
+            "📈 Moderate inflows - growing DeFi exposure",
+          grepl("Strong Outflows", pos_data$exchange_positioning$flow_regime) ~
+            "📉 Strong outflows - capital leaving DeFi",
+          grepl("Moderate Outflows", pos_data$exchange_positioning$flow_regime) ~
+            "📊 Moderate outflows",
+          TRUE ~ "⚖️ Neutral flows"
+        )
       )
 
-      if (is.list(pos_data) && !is.character(pos_data)) {
-        framework$raw_data$positioning <- pos_data
+      #-------------------------------------------------------------------------
+      # MORPHO-SPECIFIC INTELLIGENCE
+      #-------------------------------------------------------------------------
+      if (!is.null(pos_data$raw_positioning_data)) {
+        morpho <- pos_data$raw_positioning_data
 
-        #-------------------------------------------------------------------------
-        # BASIC POSITIONING SIGNALS (compatibility layer)
-        #-------------------------------------------------------------------------
-        framework$signals$positioning <- list(
-          # Original fields (for backward compatibility)
-          whale_flow = pos_data$exchange_positioning$flow_regime,
-          whale_activity = pos_data$whale_activity$whale_signal,
+        # Whale concentration metrics
+        if (!is.null(morpho$whale_concentration)) {
+          framework$signals$positioning$whale_concentration <- list(
+            unique_whales = morpho$whale_concentration$total_whale_wallets %||% 0,
+            mega_whales = morpho$whale_concentration$mega_whales %||% 0,
+            regular_whales = morpho$whale_concentration$regular_whales %||% 0,
+            hhi = morpho$whale_concentration$hhi %||% 0,
+            hhi_interpretation = morpho$whale_concentration$hhi_interpretation %||% "Unknown",
+            top_5_share = morpho$whale_concentration$top_5_share %||% 0,
 
-          # Enhanced interpretation
-          whale_interpretation = dplyr::case_when(
-            grepl("Extreme Inflows", pos_data$exchange_positioning$flow_regime) ~
-              "🚨 Extreme selling pressure - whales moving to exchanges",
-            grepl("Extreme Outflows", pos_data$exchange_positioning$flow_regime) ~
-              "🚀 Strong accumulation - whales moving to cold storage",
-            grepl("High Activity \\(Potential Volatility\\)", pos_data$exchange_positioning$flow_regime) ~
-              "⚠️ High whale activity - volatility expected",
-            grepl("Net Inflows", pos_data$exchange_positioning$flow_regime) ~
-              "Mild selling pressure",
-            grepl("Net Outflows", pos_data$exchange_positioning$flow_regime) ~
-              "Mild accumulation",
-            TRUE ~ "Neutral"
+            # Risk classification
+            concentration_risk = dplyr::case_when(
+              (morpho$whale_concentration$hhi %||% 0) > 2500 ~ "🔴 CRITICAL",
+              (morpho$whale_concentration$hhi %||% 0) > 1500 ~ "🟠 HIGH",
+              (morpho$whale_concentration$hhi %||% 0) > 1000 ~ "🟡 MEDIUM",
+              TRUE ~ "🟢 LOW"
+            ),
+
+            # Systemic risk flag
+            systemic_risk = ifelse(
+              (morpho$whale_concentration$top_5_share %||% 0) > 50,
+              "⚠️ High systemic risk - top 5 whales control majority",
+              "Distributed"
+            )
           )
-        )
+        }
 
-        #-------------------------------------------------------------------------
-        # MORPHO-SPECIFIC INTELLIGENCE (when available)
-        #-------------------------------------------------------------------------
-        if (!is.null(pos_data$raw_positioning_data) &&
-            !is.null(pos_data$data_source) &&
-            pos_data$data_source == "Morpho Vaults") {
+        # Vault flow analysis
+        if (!is.null(morpho$vault_flows) && !is.null(morpho$flow_summary)) {
+          framework$signals$positioning$vault_flows <- list(
+            transactions = sum(morpho$vault_flows$tx_count %||% 0),
+            date_range = paste(
+              format(min(morpho$vault_flows$oldest_tx_date, na.rm = TRUE), "%Y-%m-%d"),
+              "to",
+              format(max(morpho$vault_flows$newest_tx_date, na.rm = TRUE), "%Y-%m-%d")
+            ),
+            net_flow_usd = morpho$flow_summary$net_flow_usd %||% 0,
+            net_flow_pct = morpho$flow_summary$net_flow_pct %||% 0,
+            flow_regime = morpho$flow_summary$flow_regime %||% "Unknown"
+          )
+        }
 
-          morpho <- pos_data$raw_positioning_data
-
-          # Whale concentration metrics
-          if (!is.null(morpho$whale_concentration)) {
-            framework$signals$positioning$whale_concentration <- list(
-              unique_whales = morpho$whale_concentration$total_whale_wallets %||% 0,
-              mega_whales = morpho$whale_concentration$mega_whales %||% 0,
-              regular_whales = morpho$whale_concentration$regular_whales %||% 0,
-              hhi = morpho$whale_concentration$hhi %||% 0,
-              hhi_interpretation = morpho$whale_concentration$hhi_interpretation %||% "Unknown",
-              top_5_share = morpho$whale_concentration$top_5_share %||% 0,
-
-              # Risk classification
-              concentration_risk = dplyr::case_when(
-                (morpho$whale_concentration$hhi %||% 0) > 2500 ~ "🔴 CRITICAL",
-                (morpho$whale_concentration$hhi %||% 0) > 1500 ~ "🟠 HIGH",
-                (morpho$whale_concentration$hhi %||% 0) > 1000 ~ "🟡 MEDIUM",
-                TRUE ~ "🟢 LOW"
-              ),
-
-              # Systemic risk flag
-              systemic_risk = ifelse(
-                (morpho$whale_concentration$top_5_share %||% 0) > 50,
-                "⚠️ High systemic risk - top 5 whales control majority",
-                "Distributed"
+        # Top depositors (whale wallets)
+        if (!is.null(morpho$top_depositors) && nrow(morpho$top_depositors) > 0) {
+          framework$signals$positioning$whale_wallets <- list(
+            count = length(unique(morpho$top_depositors$user_address)),
+            top_depositors = morpho$top_depositors %>%
+              dplyr::arrange(dplyr::desc(assets_usd)) %>%
+              utils::head(5) %>%
+              dplyr::mutate(
+                wallet_short = paste0(substr(user_address, 1, 6), "..."),
+                exposure_formatted = paste0("$", round(assets_usd / 1e6, 1), "M")
+              ) %>%
+              dplyr::select(
+                vault = vault_name,
+                whale = wallet_short,
+                exposure = exposure_formatted,
+                share = round(share_pct, 1)
               )
-            )
-          }
-
-          # Vault flow analysis
-          if (!is.null(morpho$vault_flows) && !is.null(morpho$flow_summary)) {
-            framework$signals$positioning$vault_flows <- list(
-              transactions = sum(morpho$vault_flows$tx_count %||% 0),
-              date_range = paste(
-                format(min(morpho$vault_flows$oldest_tx_date, na.rm = TRUE), "%Y-%m-%d"),
-                "to",
-                format(max(morpho$vault_flows$newest_tx_date, na.rm = TRUE), "%Y-%m-%d")
-              ),
-              net_flow_usd = morpho$flow_summary$net_flow_usd %||% 0,
-              net_flow_pct = morpho$flow_summary$net_flow_pct %||% 0,
-              flow_regime = morpho$flow_summary$flow_regime %||% "Unknown"
-            )
-          }
-
-          # Top depositors (whale wallets)
-          if (!is.null(morpho$top_depositors) && nrow(morpho$top_depositors) > 0) {
-            framework$signals$positioning$whale_wallets <- list(
-              count = length(unique(morpho$top_depositors$user_address)),
-              top_depositors = morpho$top_depositors %>%
-                dplyr::arrange(dplyr::desc(assets_usd)) %>%
-                utils::head(5) %>%
-                dplyr::mutate(
-                  wallet_short = paste0(substr(user_address, 1, 6), "..."),
-                  exposure_formatted = paste0("$", round(assets_usd / 1e6, 1), "M")
-                ) %>%
-                dplyr::select(
-                  vault = vault_name,
-                  whale = wallet_short,
-                  exposure = exposure_formatted,
-                  share = round(share_pct, 1)
-                )
-            )
-          }
-
-          # Vault composition
-          if (!is.null(morpho$whale_activity)) {
-            framework$signals$positioning$vault_composition <- list(
-              total_vaults = morpho$whale_activity$total_vaults %||% 0,
-              direct_deposit = morpho$whale_activity$direct_btc_vaults %||% 0,
-              collateral_lending = morpho$whale_activity$collateral_btc_vaults %||% 0,
-              large_vaults = morpho$whale_activity$large_vaults_count %||% 0,
-              medium_vaults = morpho$whale_activity$medium_vaults_count %||% 0,
-              small_vaults = morpho$whale_activity$small_vaults_count %||% 0
-            )
-          }
-
-          # Enhanced summary interpretation
-          framework$signals$positioning$enhanced_summary <-
-            morpho$interpretation %||% "Morpho data available"
-
-          # Data source
-          framework$signals$positioning$data_source <- "Morpho Vaults (DeFi)"
-
-          message("  ✅ Enhanced Morpho intelligence loaded")
-
-        } else if (!is.null(pos_data$data_source)) {
-          # Whale Alert mode (basic)
-          framework$signals$positioning$data_source <- pos_data$data_source
-        }
-
-        #-------------------------------------------------------------------------
-        # SENTIMENT (Google Trends) - common to both sources
-        #-------------------------------------------------------------------------
-        if (!is.null(pos_data$google_trends) && include_google_trends) {
-          framework$signals$positioning$sentiment <- list(
-            score = pos_data$google_trends$current_sentiment,
-            signal = pos_data$google_trends$sentiment_signal,
-            interpretation = dplyr::case_when(
-              pos_data$google_trends$current_sentiment > 80 ~
-                "📈 Extreme retail interest - potential top",
-              pos_data$google_trends$current_sentiment < 20 ~
-                "📉 Retail apathy - potential bottom",
-              pos_data$google_trends$current_sentiment > 60 ~
-                "📊 High retail interest",
-              TRUE ~ "Normal retail interest"
-            )
           )
-
-          # Add related queries if available
-          if (!is.null(pos_data$google_trends$related_queries)) {
-            framework$signals$positioning$sentiment$top_queries <-
-              head(pos_data$google_trends$related_queries$value, 5)
-          }
         }
 
-        message("  ✅ Flow regime: ", pos_data$exchange_positioning$flow_regime)
-        message("  ✅ Whale activity: ", pos_data$whale_activity$whale_signal)
-
-        if (!is.null(framework$signals$positioning$whale_concentration)) {
-          message("  ✅ Whale concentration: ",
-                  framework$signals$positioning$whale_concentration$hhi_interpretation)
+        # Vault composition
+        if (!is.null(morpho$whale_activity)) {
+          framework$signals$positioning$vault_composition <- list(
+            total_vaults = morpho$whale_activity$total_vaults %||% 0,
+            direct_deposit = morpho$whale_activity$direct_btc_vaults %||% 0,
+            collateral_lending = morpho$whale_activity$collateral_btc_vaults %||% 0,
+            large_vaults = morpho$whale_activity$large_vaults_count %||% 0,
+            medium_vaults = morpho$whale_activity$medium_vaults_count %||% 0,
+            small_vaults = morpho$whale_activity$small_vaults_count %||% 0
+          )
         }
 
-      } else {
-        framework$warnings <- c(framework$warnings, "No positioning data found")
+        # Enhanced summary interpretation
+        framework$signals$positioning$enhanced_summary <-
+          morpho$interpretation %||% "Morpho data available"
+
+        # Data source
+        framework$signals$positioning$data_source <- "Morpho Vaults"
+
+        message("  ✅ Enhanced Morpho intelligence loaded")
       }
 
-    }, error = function(e) {
-      framework$warnings <- c(framework$warnings, paste("Positioning:", e$message))
-    })
-  }
+      message("  ✅ Flow regime: ", pos_data$exchange_positioning$flow_regime)
+      message("  ✅ Whale activity: ", pos_data$whale_activity$whale_signal)
+
+      if (!is.null(framework$signals$positioning$whale_concentration)) {
+        message("  ✅ Whale concentration: ",
+                framework$signals$positioning$whale_concentration$hhi_interpretation)
+      }
+
+    } else {
+      framework$warnings <- c(framework$warnings, "No positioning data found")
+    }
+
+  }, error = function(e) {
+    framework$warnings <- c(framework$warnings, paste("Positioning:", e$message))
+  })
+
+  #---------------------------------------------------------------------------
+  # FEAR & GREED SENTIMENT INDICATOR
+  #---------------------------------------------------------------------------
+  message("📈 Fetching Fear & Greed sentiment data...")
+
+  tryCatch({
+    fgi_data <- get_fear_greed(days = 30)
+
+    if (!is.null(fgi_data)) {
+      framework$raw_data$sentiment <- fgi_data
+
+      framework$signals$sentiment <- list(
+        value = fgi_data$current_value,
+        classification = fgi_data$current_classification,
+        interpretation = dplyr::case_when(
+          fgi_data$current_value >= 75 ~ "Extreme Greed - market euphoria, potential top",
+          fgi_data$current_value >= 55 ~ "Greed - bullish sentiment",
+          fgi_data$current_value >= 45 ~ "Neutral - balanced sentiment",
+          fgi_data$current_value >= 25 ~ "Fear - bearish sentiment",
+          TRUE ~ "Extreme Fear - panic selling, potential bottom"
+        ),
+        signal_emoji = dplyr::case_when(
+          fgi_data$current_value >= 75 ~ "🔴",
+          fgi_data$current_value >= 55 ~ "🟡",
+          fgi_data$current_value >= 45 ~ "⚪",
+          fgi_data$current_value >= 25 ~ "🟢",
+          TRUE ~ "🟢"
+        )
+      )
+
+      message("  ✅ Fear & Greed: ", fgi_data$current_value, " - ", fgi_data$current_classification)
+    } else {
+      framework$warnings <- c(framework$warnings, "Fear & Greed data unavailable")
+    }
+
+  }, error = function(e) {
+    framework$warnings <- c(framework$warnings, paste("Fear & Greed error:", e$message))
+  })
 
   #---------------------------------------------------------------------------
   # DECISION FRAMEWORK
@@ -914,7 +888,7 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   )
 
   #---------------------------------------------------------------------------
-  # RISK-OFF SIGNALS (Enhanced with Morpho intelligence)
+  # RISK-OFF SIGNALS (Enhanced with Morpho intelligence and sentiment)
   #---------------------------------------------------------------------------
   risk_level <- "LOW"
   risk_factors <- c()
@@ -970,6 +944,18 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   if (!is.null(framework$signals$positioning$vault_flows)) {
     if (abs(framework$signals$positioning$vault_flows$net_flow_pct) > 20) {
       risk_factors <- c(risk_factors, "Extreme vault flows - high volatility expected")
+    }
+  }
+
+  # Fear & Greed sentiment check
+  if (!is.null(framework$signals$sentiment)) {
+    if (framework$signals$sentiment$value >= 75 || framework$signals$sentiment$value <= 25) {
+      if (risk_level != "HIGH") risk_level <- "MEDIUM"
+      risk_factors <- c(risk_factors, paste("Extreme sentiment -", framework$signals$sentiment$classification))
+    }
+    if (framework$signals$sentiment$value >= 85 || framework$signals$sentiment$value <= 15) {
+      risk_level <- "HIGH"
+      risk_factors <- c(risk_factors, "Critical sentiment extreme - potential reversal")
     }
   }
 
@@ -1030,7 +1016,7 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   )
 
   #---------------------------------------------------------------------------
-  # ACTIONABLE SUMMARY (Enhanced with Morpho insights)
+  # ACTIONABLE SUMMARY (Enhanced with Morpho insights and sentiment)
   #---------------------------------------------------------------------------
   bullet_points <- c(
     paste0("RISK: ", framework$decisions$risk_off$color, " - ",
@@ -1054,6 +1040,16 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
       paste0("VAULT FLOWS: ",
              framework$signals$positioning$vault_flows$flow_regime,
              " (", round(framework$signals$positioning$vault_flows$net_flow_pct, 1), "%)")
+    )
+  }
+
+  # Add sentiment bullet if available
+  if (!is.null(framework$signals$sentiment)) {
+    bullet_points <- c(
+      bullet_points,
+      paste0("SENTIMENT: ", framework$signals$sentiment$signal_emoji, " ",
+             framework$signals$sentiment$classification, " (",
+             framework$signals$sentiment$value, "/100)")
     )
   }
 
@@ -1357,11 +1353,11 @@ print_crypto_summary <- function(x) {
     }
 
     #-------------------------------------------------------------------------
-    # POSITIONING INDICATORS (Whales & Retail) - ENHANCED WITH MORPHO
+    # POSITIONING INDICATORS (DeFi Positioning)
     #-------------------------------------------------------------------------
     if (!is.null(x$signals$positioning)) {
       print_sep()
-      cat("🐋 POSITIONING & SENTIMENT\n")
+      cat("🐋 DEFI POSITIONING\n")
       print_sep()
 
       p <- x$signals$positioning
@@ -1371,14 +1367,16 @@ print_crypto_summary <- function(x) {
         cat("  Data Source:", p$data_source, "\n\n")
       }
 
-      # Basic whale flow
+      # Basic flow regime
       if (!is.null(p$whale_flow)) {
-        whale_emoji <- ifelse(grepl("Accumulation|Bullish", p$whale_flow), "🟢",
-                              ifelse(grepl("Selling|Bearish", p$whale_flow), "🔴", "🟡"))
-        cat(whale_emoji, " Whale Flow: ", safe_extract(p, "whale_flow"), "\n")
-        add_explanation("Whale Flow", "Inflows = whales sending to exchanges (potential selling). Outflows = whales moving to cold storage (accumulation).")
-        cat("  • Interpretation: ", safe_extract(p, "whale_interpretation"), "\n")
+        flow_emoji <- ifelse(grepl("Inflows", p$whale_flow), "📥",
+                             ifelse(grepl("Outflows", p$whale_flow), "📤", "⚖️"))
+        cat(flow_emoji, " Flow Regime: ", safe_extract(p, "whale_flow"), "\n")
+        add_explanation("Vault Flows", "Inflows = capital entering DeFi (bullish deployment). Outflows = capital leaving DeFi (risk-off).")
         cat("  • Activity: ", safe_extract(p, "whale_activity"), "\n")
+        if (!is.null(p$whale_interpretation)) {
+          cat("  • ", p$whale_interpretation, "\n")
+        }
       }
 
       #-------------------------------------------------------------------------
@@ -1391,38 +1389,41 @@ print_crypto_summary <- function(x) {
         cat("    Unique Whale Wallets:", wc$unique_whales, "\n")
         cat("    Mega Whales (>$10M):", wc$mega_whales, "\n")
         cat("    Regular Whales ($1M-$10M):", wc$regular_whales, "\n")
-        cat("    HHI Index:", round(wc$hhi, 1), "(", wc$hhi_interpretation, ")\n")
-        cat("    Top 5 Share:", round(wc$top_5_share, 1), "%\n")
+        cat("    Market Concentration (HHI):", round(wc$hhi, 1), "(", wc$hhi_interpretation, ")\n")
+        cat("    Top 5 Depositors Share:", round(wc$top_5_share, 1), "%\n")
         cat("    Concentration Risk:", wc$concentration_risk, "\n")
         if (!is.null(wc$systemic_risk)) {
           cat("    ", wc$systemic_risk, "\n")
         }
+        add_explanation("Concentration", "High concentration means few whales control most capital - increased systemic risk.")
       }
 
       if (!is.null(p$vault_flows)) {
         vf <- p$vault_flows
-        cat("\n  📊 VAULT FLOW ANALYSIS\n")
+        cat("\n  📊 CAPITAL FLOW ANALYSIS\n")
         cat("  ", paste(rep("─", 40), collapse = ""), "\n")
-        cat("    Date Range:", vf$date_range, "\n")
-        cat("    Transactions:", vf$transactions, "\n")
+        cat("    Period:", vf$date_range, "\n")
+        cat("    Transactions Analyzed:", vf$transactions, "\n")
         cat("    Net Flow: $", format(round(vf$net_flow_usd / 1e6, 2), big.mark = ","), "M", sep = "")
         if (!is.null(vf$net_flow_pct)) {
           cat(" (", round(vf$net_flow_pct, 1), "% of TVL)", sep = "")
         }
         cat("\n    Flow Regime:", vf$flow_regime, "\n")
+        add_explanation("Capital Flows", "Shows whether capital is entering (bullish) or leaving (bearish) DeFi protocols.")
       }
 
       if (!is.null(p$vault_composition)) {
         vc <- p$vault_composition
-        cat("\n  🏦 VAULT COMPOSITION\n")
+        cat("\n  🏦 MARKET STRUCTURE\n")
         cat("  ", paste(rep("─", 40), collapse = ""), "\n")
         cat("    Total BTC-Exposed Vaults:", vc$total_vaults, "\n")
-        cat("    • Direct Deposit Vaults:", vc$direct_deposit, "\n")
-        cat("    • Collateral Lending Vaults:", vc$collateral_lending, "\n")
-        cat("    Size Distribution:\n")
-        cat("      Large (>$100M):", vc$large_vaults, "\n")
-        cat("      Medium ($10M-$100M):", vc$medium_vaults, "\n")
-        cat("      Small (<$10M):", vc$small_vaults, "\n")
+        cat("    • Direct BTC Deposits:", vc$direct_deposit, "\n")
+        cat("    • BTC-Collateral Lending:", vc$collateral_lending, "\n")
+        cat("    Vault Size Distribution:\n")
+        cat("      • Large (>$100M):", vc$large_vaults, "\n")
+        cat("      • Medium ($10M-$100M):", vc$medium_vaults, "\n")
+        cat("      • Small (<$10M):", vc$small_vaults, "\n")
+        add_explanation("Market Structure", "Shows how Bitcoin exposure is achieved - direct deposits vs. collateralized lending.")
       }
 
       if (!is.null(p$whale_wallets) && !is.null(p$whale_wallets$top_depositors)) {
@@ -1436,23 +1437,24 @@ print_crypto_summary <- function(x) {
           cat("      Share:", whales$share[i], "%\n")
         }
         if (p$whale_wallets$count > 3) {
-          cat("      ... and", p$whale_wallets$count - 3, "more\n")
+          cat("      ... and", p$whale_wallets$count - 3, "more whale wallets\n")
         }
+        add_explanation("Whale Wallets", "Specific wallet addresses controlling large positions - can be tracked for behavior patterns.")
       }
+    }
 
-      # Sentiment (always shown if available)
-      if (!is.null(p$sentiment)) {
-        cat("\n  📈 RETAIL SENTIMENT\n")
-        cat("  ", paste(rep("─", 40), collapse = ""), "\n")
-        sent_emoji <- ifelse(grepl("Low Interest", p$sentiment$signal), "🟢",
-                             ifelse(grepl("Extreme Interest", p$sentiment$signal), "🔴", "🟡"))
-        cat(sent_emoji, " Google Trends: ", safe_extract(p, c("sentiment", "score")),
-            " [", safe_extract(p, c("sentiment", "signal")), "]\n", sep = "")
-        if (!is.null(p$sentiment$top_queries)) {
-          cat("    Top Queries: ", paste(p$sentiment$top_queries, collapse = ", "), "\n")
-        }
-        add_explanation("Google Trends", "Retail interest. <20 = apathy (potential bottom), >80 = euphoria (potential top).")
-      }
+    #-------------------------------------------------------------------------
+    # FEAR & GREED SENTIMENT
+    #-------------------------------------------------------------------------
+    if (!is.null(x$signals$sentiment)) {
+      print_sep()
+      cat("📈 MARKET SENTIMENT\n")
+      print_sep()
+
+      sent <- x$signals$sentiment
+      cat("  ", sent$signal_emoji, " Fear & Greed Index: ", sent$value, "/100 - ", sent$classification, "\n", sep = "")
+      cat("  ", sent$interpretation, "\n")
+      add_explanation("Fear & Greed", "Contrarian indicator: Extreme fear (<25) can signal bottoms, extreme greed (>75) can signal tops.")
     }
 
     #-------------------------------------------------------------------------
@@ -1487,7 +1489,7 @@ print_crypto_summary <- function(x) {
                          ifelse(grepl("Bear", mt_signal), "🔴", "🟡"))
       cat("\n", mt_emoji, " MEDIUM-TERM (Weeks to Months):\n", sep = "")
       cat("  • Trend Signal: ", mt_signal, " (Score: ", safe_extract(mt, c("trend", "score"), "0"), "/4)\n", sep = "")
-      add_explanation("Trend Score", "Combines on-chain valuation (MVRV) with macro conditions and whale flows. Higher = stronger bull trend.")
+      add_explanation("Trend Score", "Combines on-chain valuation (MVRV) with macro conditions and DeFi flows. Higher = stronger bull trend.")
 
       cat("  • Valuation: ", safe_extract(mt, c("valuation", "composite"), "Neutral"), "\n")
 
@@ -1618,20 +1620,26 @@ print_crypto_summary <- function(x) {
     print_sep()
 
     quick_ref <- data.frame(
-      Horizon = c("Short-term", "Medium-term", "Long-term", "Risk Level", "Regime"),
+      Horizon = c("Short-term", "Medium-term", "Long-term", "Risk Level", "Regime", "Sentiment"),
       Signal = c(
         safe_extract(x, c("decisions", "short_term", "momentum", "signal"), "Neutral"),
         safe_extract(x, c("decisions", "medium_term", "trend", "direction"), "Neutral"),
         safe_extract(x, c("decisions", "long_term", "strategic", "core_position"), "Maintain"),
         safe_extract(x, c("decisions", "risk_off", "color"), "UNKNOWN"),
-        safe_extract(x, c("decisions", "regime_allocation", "current_regime"), "Neutral")
+        safe_extract(x, c("decisions", "regime_allocation", "current_regime"), "Neutral"),
+        if (!is.null(x$signals$sentiment)) {
+          paste0(x$signals$sentiment$value, "/100 - ", x$signals$sentiment$classification)
+        } else {
+          "N/A"
+        }
       ),
       Meaning = c(
         "Days timeframe - momentum trading",
-        "Weeks to months - trend following (whale flows integrated)",
+        "Weeks to months - trend following (DeFi flows integrated)",
         "Years - strategic positioning",
         "Current market risk level",
-        "Overall market regime"
+        "Overall market regime",
+        "Fear & Greed Index"
       ),
       stringsAsFactors = FALSE
     )

@@ -1303,23 +1303,17 @@ get_volatility <- function(data, windows = list(short = 7, medium = 30, long = 9
 
 }
 
-#' Fetch Whale Transaction Data and Retail Sentiment Indicators
+#' Fetch Positioning Data from Morpho Vaults
 #'
 #' @description
-#' Retrieves and analyzes positioning data from either Whale Alert API (CEX-based)
-#' or Morpho Vaults (DeFi-based). The Morpho option provides insights into
-#' "smart money" positioning through Bitcoin exposure in lending markets,
-#' while the Whale Alert option tracks large exchange movements.
+#' Retrieves and analyzes positioning data from Morpho vaults, specifically tracking
+#' Bitcoin exposure through DeFi lending markets. This provides insights into
+#' "smart money" positioning, whale concentration, and capital flows.
 #'
-#' @param api_key Character string containing your Whale Alert API key.
-#'   Only used when use_morpho = FALSE. Default NULL.
-#'   Get a free API key at \url{https://whale-alert.io/api}
-#' @param start_time Start time for whale transaction lookup in "YYYY-MM-DD" format.
-#'   Only used when use_morpho = FALSE. Default NULL.
-#' @param google_trends_keywords Character vector of keywords to track for retail
-#'   sentiment. Default c("bitcoin", "crypto", "blockchain").
-#' @param use_morpho Logical. If TRUE, uses Morpho vault data instead of Whale Alert API.
-#'   When TRUE, api_key and start_time parameters are ignored. Default TRUE.
+#' @param include_depositors Logical. Whether to fetch top depositor data (slower). Default TRUE.
+#' @param include_flows Logical. Whether to fetch transaction flow data (slower). Default TRUE.
+#' @param top_n_vaults Integer. Number of top vaults to analyze for depositors/flows. Default 10.
+#' @param max_depositors_per_vault Integer. Maximum depositors to fetch per vault. Default 20.
 #'
 #' @return A list object of class \code{positioning_data} containing:
 #'
@@ -1327,92 +1321,86 @@ get_volatility <- function(data, windows = list(short = 7, medium = 30, long = 9
 #'   \itemize{
 #'     \item \code{netflow_summary}: Data frame with:
 #'       \itemize{
-#'         \item \code{inflow_usd}: Total USD value of inflows (deposits)
-#'         \item \code{outflow_usd}: Total USD value of outflows (withdrawals)
+#'         \item \code{inflow_usd}: Total USD value of deposits into vaults
+#'         \item \code{outflow_usd}: Total USD value of withdrawals from vaults
 #'         \item \code{tx_count}: Total number of transactions
-#'         \item \code{pct}: Percentage of large transactions / whale concentration
+#'         \item \code{pct}: Top 5 depositors share percentage (concentration)
 #'         \item \code{netflow_usd}: Net flow (inflow - outflow)
 #'       }
-#'     \item \code{flow_regime}: Categorical interpretation of flows
-#'     \item \code{top_exchange_target}: Most significant vault / exchange
+#'     \item \code{flow_regime}: Categorical interpretation of vault flows
+#'     \item \code{top_exchange_target}: Largest BTC-exposed vault
 #'   }
 #'
 #'   \strong{Whale Activity Metrics:}
 #'   \itemize{
-#'     \item \code{total_tx}: Total number of whale transactions / wallets
-#'     \item \code{whale_signal}: Activity level interpretation
-#'     \item \code{largest_move_usd}: Size of the largest transaction / vault
+#'     \item \code{total_tx}: Number of unique whale wallets identified
+#'     \item \code{whale_signal}: Activity level interpretation based on vault sizes
+#'     \item \code{largest_move_usd}: Size of the largest BTC-exposed vault
 #'   }
 #'
 #'   \strong{Raw Data:}
 #'   \itemize{
-#'     \item \code{raw_positioning_data}: Detailed data for custom analysis
-#'     \item \code{data_source}: Indicator of which data source was used
-#'   }
-#'
-#'   \strong{Retail Sentiment (Google Trends):}
-#'   \itemize{
-#'     \item \code{google_trends}: List containing Google Trends data
+#'     \item \code{raw_positioning_data}: Complete Morpho data from \code{\link{get_morpho_positioning}}
+#'     \item \code{data_source}: Always "Morpho Vaults"
 #'   }
 #'
 #' @details
-#' \strong{Why Whale Transactions Matter (CEX-based)}
+#' \strong{Why Morpho Vaults Matter for Positioning}
 #'
-#' Large holders ("whales") moving coins to/from exchanges can signal intent:
+#' Morpho vaults reveal actual capital deployment in DeFi lending markets:
 #' \itemize{
-#'   \item \strong{Exchange Inflows}: Potential selling pressure
-#'   \item \strong{Exchange Outflows}: Accumulation signal
-#' }
-#'
-#' \strong{Why Morpho Vaults Matter (DeFi-based)}
-#'
-#' Morpho vaults show actual capital deployment in DeFi lending:
-#' \itemize{
-#'   \item \strong{Vault Inflows}: BTC entering productive use (bullish)
+#'   \item \strong{Vault Inflows}: BTC entering productive use (bullish signal)
 #'   \item \strong{Vault Outflows}: BTC returning to cold storage (neutral/bearish)
-#'   \item \strong{Whale Concentration}: Identifies systemic risk
+#'   \item \strong{Whale Concentration}: Identifies systemic risk through HHI and top depositor share
+#'   \item \strong{Vault Composition}: Shows whether exposure is through direct deposits or collateralized lending
 #' }
+#'
+#' This provides a more sophisticated view of "smart money" positioning than
+#' simple exchange flow tracking, revealing not just movement but actual
+#' economic activity and concentration risk.
 #'
 #' @note
 #' \itemize{
-#'   \item When use_morpho = TRUE, no API key is required
-#'   \item Morpho data is sourced from public APIs with rate limits
-#'   \item Google Trends data may be delayed by 1-2 days
+#'   \item No API key required - all data is from public Morpho endpoints
+#'   \item Rate limits may apply for intensive queries
 #' }
 #'
 #' @examples
 #' \dontrun{
-#' # Use Morpho data (default, no API key needed)
+#' # Basic usage - get current positioning
 #' positioning <- get_positioning()
 #'
-#' # Use Whale Alert (requires API key)
-#' positioning <- get_positioning(
-#'   api_key = "your_whale_alert_key",
-#'   use_morpho = FALSE
-#' )
+#' # View summary
+#' print(positioning)
 #'
-#' # Check positioning
-#' cat("Flow Regime:", positioning$exchange_positioning$flow_regime, "\n")
-#' cat("Whale Activity:", positioning$whale_activity$whale_signal, "\n")
+#' # Access specific components
+#' positioning$exchange_positioning$flow_regime
+#' positioning$whale_activity$whale_signal
+#' positioning$raw_positioning_data$whale_concentration
+#'
+#' # Check whale concentration
+#' if (!is.null(positioning$raw_positioning_data$whale_concentration)) {
+#'   cat("Market concentration:",
+#'       positioning$raw_positioning_data$whale_concentration$hhi_interpretation)
+#' }
 #' }
 #'
 #' @seealso
 #' \itemize{
-#'   \item \code{\link{get_morpho_positioning}} for underlying Morpho data
-#'   \item \code{\link{get_derivatives}} for exchange positioning via funding rates
+#'   \item \code{\link{get_morpho_positioning}} for detailed Morpho data
+#'   \item \code{\link{get_derivatives}} for derivatives market positioning
+#'   \item \code{\link{get_onchain_indicators}} for fundamental valuation
+#'   \item \code{\link{get_google_trends}} for retail sentiment data
 #' }
 #'
 #' @author Filippo Franchini
 #' @export
 #'
-#' @importFrom dplyr mutate summarise n case_when
-#' @importFrom httr GET content
-#' @importFrom jsonlite fromJSON
-#' @importFrom gtrendsR gtrends
-get_positioning <- function(api_key = NULL,
-                            start_time = NULL,
-                            google_trends_keywords = c("bitcoin", "crypto", "blockchain"),
-                            use_morpho = TRUE) {
+#' @importFrom dplyr case_when
+get_positioning <- function(include_depositors = TRUE,
+                            include_flows = TRUE,
+                            top_n_vaults = 5,
+                            max_depositors_per_vault = 10) {
 
   #---------------------------------------------------------------------------
   # NULL coalescing helper
@@ -1420,212 +1408,220 @@ get_positioning <- function(api_key = NULL,
   `%||%` <- function(x, y) if (is.null(x) || length(x) == 0 || (length(x) == 1 && is.na(x))) y else x
 
   #---------------------------------------------------------------------------
-  # Google Trends helper (common to both modes)
+  # FETCH MORPHO DATA
   #---------------------------------------------------------------------------
-  get_google_trends <- function(keywords) {
-    tryCatch({
+
+  # Get Morpho data
+  morpho_data <- tryCatch({
+    get_morpho_positioning(
+      include_depositors = include_depositors,
+      include_flows = include_flows,
+      top_n_vaults = top_n_vaults,
+      max_depositors_per_vault = max_depositors_per_vault
+    )
+  }, error = function(e) {
+    warning("Failed to fetch Morpho data: ", e$message)
+    return(create_empty_positioning(source = "Morpho Error"))
+  })
+
+  if (is.null(morpho_data) || morpho_data$status != "success") {
+    warning("Morpho data fetch was not successful")
+    return(create_empty_positioning(source = "Morpho Failed"))
+  }
+
+  # Map Morpho whale signal to flow regime categories
+  flow_regime_from_whale <- dplyr::case_when(
+    grepl("High Whale Intensity", morpho_data$whale_activity$whale_signal) ~
+      "High Whale Activity (Volatility Expected)",
+    grepl("Moderate", morpho_data$whale_activity$whale_signal) ~
+      "Moderate Whale Activity",
+    grepl("Normal", morpho_data$whale_activity$whale_signal) ~
+      "Normal Whale Activity",
+    TRUE ~ morpho_data$whale_activity$whale_signal %||% "Unknown"
+  )
+
+  # Map Morpho data to standardized structure
+  result <- list(
+    # Exchange positioning (mapped from vault data)
+    exchange_positioning = list(
+      netflow_summary = data.frame(
+        inflow_usd = morpho_data$flow_summary$total_inflow_usd %||% 0,
+        outflow_usd = morpho_data$flow_summary$total_outflow_usd %||% 0,
+        tx_count = morpho_data$flow_summary$total_transactions %||%
+          morpho_data$whale_concentration$total_whale_wallets %||% 0,
+        pct = morpho_data$whale_concentration$top_5_share %||% 0,
+        netflow_usd = morpho_data$flow_summary$net_flow_usd %||% 0
+      ),
+      flow_regime = morpho_data$flow_summary$flow_regime %||%
+        flow_regime_from_whale %||%
+        "Unknown",
+      top_exchange_target = if (!is.null(morpho_data$top_vaults) && nrow(morpho_data$top_vaults) > 0)
+        morpho_data$top_vaults$vault_display[1]
+      else NA_character_
+    ),
+
+    # Whale activity (mapped from depositor data)
+    whale_activity = list(
+      total_tx = morpho_data$whale_concentration$total_whale_wallets %||%
+        nrow(morpho_data$vault_summary) %||% 0,
+      whale_signal = morpho_data$whale_activity$whale_signal %||% "Unknown",
+      largest_move_usd = if (!is.null(morpho_data$vault_summary) && nrow(morpho_data$vault_summary) > 0)
+        morpho_data$vault_summary$btc_exposure_usd[1]
+      else 0
+    ),
+
+    # Raw data
+    raw_positioning_data = morpho_data,
+    data_source = "Morpho Vaults"
+  )
+
+  # Add interpretation
+  result$interpretation <- morpho_data$interpretation %||%
+    "Morpho positioning data collected successfully."
+
+  class(result) <- "positioning_data"
+  return(result)
+}
+
+#' Fetch Google Trends Data (Simple Version)
+#'
+#' @description
+#' Simple function to fetch Google Trends data with basic retry logic.
+#' Returns sentiment score and signal for the last 7 days.
+#'
+#' @param keywords Character vector of keywords to search for. Default "bitcoin".
+#' @param max_retries Integer. Maximum number of retry attempts for rate limiting. Default 3.
+#'
+#' @return A list containing:
+#'   \itemize{
+#'     \item \code{current_sentiment}: Average search interest over last 7 days (0-100)
+#'     \item \code{sentiment_signal}: Categorical interpretation of sentiment
+#'     \item \code{interest_over_time}: Full historical data
+#'     \item \code{keywords}: Keywords used
+#'   }
+#' @export
+#'
+#' @importFrom gtrendsR gtrends
+#' @importFrom dplyr case_when
+get_google_trends <- function(keywords = "bitcoin", max_retries = 3) {
+
+  for (attempt in 1:max_retries) {
+
+    result <- tryCatch({
+      # Fetch Google Trends data
       trends <- gtrendsR::gtrends(
         keyword = keywords,
-        geo = "",
         time = "today 3-m",
         gprop = "web"
       )
 
-      if (!is.null(trends$interest_over_time)) {
-        interest_data <- trends$interest_over_time
-        interest_data$date <- as.Date(interest_data$date)
-        recent_interest <- interest_data[interest_data$date > Sys.Date() - 7, ]
-        sentiment_score <- mean(recent_interest$hits, na.rm = TRUE)
+      # Check if we got data
+      if (is.null(trends$interest_over_time)) {
+        warning("No interest_over_time data returned from Google Trends")
+        return(NULL)
+      }
 
-        list(
-          interest_over_time = interest_data,
-          related_queries = trends$related_queries,
-          interest_by_region = trends$interest_by_region,
-          current_sentiment = sentiment_score,
-          sentiment_signal = dplyr::case_when(
-            sentiment_score > 80 ~ "Extreme Interest (Potential Top)",
-            sentiment_score > 60 ~ "High Interest",
-            sentiment_score > 20 ~ "Normal Interest",
-            TRUE ~ "Low Interest (Potential Bottom)"
-          ),
-          keywords = keywords
-        )
-      } else NULL
+      # Process the data
+      interest_data <- trends$interest_over_time
+      interest_data$date <- as.Date(interest_data$date)
+
+      # Calculate 7-day average
+      recent_interest <- interest_data[interest_data$date > Sys.Date() - 7, ]
+      sentiment_score <- mean(recent_interest$hits, na.rm = TRUE)
+
+      # Generate sentiment signal
+      sentiment_signal <- dplyr::case_when(
+        sentiment_score > 80 ~ "Extreme Interest (Potential Top)",
+        sentiment_score > 60 ~ "High Interest",
+        sentiment_score > 20 ~ "Normal Interest",
+        TRUE ~ "Low Interest (Potential Bottom)"
+      )
+
+      # Return results
+      return(list(
+        interest_over_time = interest_data,
+        related_queries = trends$related_queries,
+        interest_by_region = trends$interest_by_region,
+        current_sentiment = sentiment_score,
+        sentiment_signal = sentiment_signal,
+        keywords = keywords
+      ))
+
     }, error = function(e) {
-      warning("Failed to fetch Google Trends data: ", e$message)
-      NULL
+      if (grepl("429", e$message)) {
+        wait_time <- 5 * attempt
+        message("Google Trends rate limited (429). Retrying in ", wait_time, "s (attempt ", attempt, "/", max_retries, ")")
+        Sys.sleep(wait_time)
+        return(NULL)
+      } else {
+        warning("Google Trends error: ", e$message)
+        return(stop(e$message))
+      }
     })
+
+    if (!is.null(result)) return(result)
   }
 
-  #---------------------------------------------------------------------------
-  # MORPHO MODE (Default, no API key needed)
-  #---------------------------------------------------------------------------
-  if (use_morpho) {
-    message("🐋 Using Morpho vault data for positioning (DeFi-based)")
-    message("  Note: api_key and start_time parameters are ignored in Morpho mode")
+  warning("Failed to fetch Google Trends after ", max_retries, " attempts")
+  return(NULL)
+}
 
-    # Get Morpho data
-    morpho_data <- tryCatch({
-      get_morpho_positioning(
-        include_depositors = TRUE,
-        include_flows = TRUE,
-        top_n_vaults = 10,
-        max_depositors_per_vault = 20
-      )
-    }, error = function(e) {
-      warning("Failed to fetch Morpho data: ", e$message)
-      return(create_empty_positioning(source = "Morpho (Error)"))
-    })
+#' Fetch Fear & Greed Index using cryptoQuotes
+#'
+#' @description
+#' Retrieves the Crypto Fear & Greed Index from alternative.me via the cryptoQuotes package.
+#' The index ranges from 0 (Extreme Fear) to 100 (Extreme Greed).
+#'
+#' @param days Integer. Number of days of historical data to fetch. Default 30.
+#'
+#' @return A list containing:
+#'   \itemize{
+#'     \item \code{current_value}: Current Fear & Greed Index value (0-100)
+#'     \item \code{current_classification}: Text classification
+#'     \item \code{timestamp}: When the data was fetched
+#'     \item \code{history}: xts object with historical values
+#'   }
+#' @export
+#'
+#' @importFrom cryptoQuotes get_fgindex
+get_fear_greed <- function(days = 30) {
 
-    if (is.null(morpho_data) || morpho_data$status != "success") {
-      warning("Morpho data fetch was not successful")
-      return(create_empty_positioning(source = "Morpho (Failed)"))
+  tryCatch({
+    # Fetch from cryptoQuotes
+    fgi <- cryptoQuotes::get_fgindex(
+      from = Sys.Date() - days
+    )
+
+    if (is.null(fgi) || nrow(fgi) == 0) {
+      warning("No Fear & Greed data returned")
+      return(NULL)
     }
 
-    # Map Morpho whale signal to flow regime categories
-    flow_regime_from_whale <- dplyr::case_when(
-      grepl("High Whale Intensity", morpho_data$whale_activity$whale_signal) ~
-        "High Activity (Potential Volatility)",
-      grepl("Moderate", morpho_data$whale_activity$whale_signal) ~
-        "Moderate Activity",
-      grepl("Normal", morpho_data$whale_activity$whale_signal) ~
-        "Normal Activity",
-      TRUE ~ morpho_data$whale_activity$whale_signal %||% "No Data"
+    # Get current value (most recent)
+    current_value <- as.numeric(tail(fgi$fgi, 1))
+
+    # Classify the value
+    classification <- dplyr::case_when(
+      current_value >= 75 ~ "Extreme Greed",
+      current_value >= 55 ~ "Greed",
+      current_value >= 45 ~ "Neutral",
+      current_value >= 25 ~ "Fear",
+      TRUE ~ "Extreme Fear"
     )
 
-    # Map Morpho data to original structure
-    result <- list(
-      # Exchange positioning (mapped from vault data)
-      exchange_positioning = list(
-        netflow_summary = data.frame(
-          inflow_usd = morpho_data$flow_summary$total_inflow_usd %||% 0,
-          outflow_usd = morpho_data$flow_summary$total_outflow_usd %||% 0,
-          tx_count = morpho_data$flow_summary$total_transactions %||%
-            morpho_data$whale_concentration$total_whale_wallets %||% 0,
-          pct = morpho_data$whale_concentration$top_5_share %||% 0,
-          netflow_usd = morpho_data$flow_summary$net_flow_usd %||% 0
-        ),
-        flow_regime = morpho_data$flow_summary$flow_regime %||%
-          flow_regime_from_whale %||%
-          "No Data",
-        top_exchange_target = if (!is.null(morpho_data$top_vaults) && nrow(morpho_data$top_vaults) > 0)
-          morpho_data$top_vaults$vault_display[1]
-        else NA_character_
-      ),
+    # Return structured data
+    return(list(
+      current_value = current_value,
+      current_classification = classification,
+      timestamp = Sys.time(),
+      history = fgi,
+      source = "alternative.me via cryptoQuotes"
+    ))
 
-      # Whale activity (mapped from depositor data)
-      whale_activity = list(
-        total_tx = morpho_data$whale_concentration$total_whale_wallets %||%
-          nrow(morpho_data$vault_summary) %||% 0,
-        whale_signal = morpho_data$whale_activity$whale_signal %||% "No Data",
-        largest_move_usd = if (!is.null(morpho_data$vault_summary) && nrow(morpho_data$vault_summary) > 0)
-          morpho_data$vault_summary$btc_exposure_usd[1]
-        else 0
-      ),
-
-      # Raw data
-      raw_positioning_data = morpho_data,
-      data_source = "Morpho Vaults",
-
-      # Google Trends
-      google_trends = get_google_trends(google_trends_keywords)
-    )
-
-    # Add interpretation
-    result$interpretation <- morpho_data$interpretation %||%
-      "Morpho positioning data collected successfully."
-
-    class(result) <- "positioning_data"
-    return(result)
-  }
-
-  #---------------------------------------------------------------------------
-  # WHALE ALERT MODE (Original implementation)
-  #---------------------------------------------------------------------------
-  message("🐋 Using Whale Alert API for positioning (CEX-based)")
-
-  # Validate API key
-  if (is.null(api_key) || api_key == "") {
-    stop("Whale Alert API key is required when use_morpho = FALSE")
-  }
-
-  # Use default start_time if not provided
-  if (is.null(start_time)) {
-    start_time <- as.character(Sys.Date() - 7)
-  }
-
-  start_time <- as.numeric(as.POSIXct(start_time))
-
-  url <- paste0("https://api.whale-alert.io/v1/transactions",
-                "?api_key=", api_key,
-                "&start=", start_time)
-
-  response <- httr::GET(url)
-
-  if (httr::status_code(response) != 200) {
-    warning("Whale Alert API returned status: ", httr::status_code(response))
-    return(create_empty_positioning(source = "Whale Alert (Error)"))
-  }
-
-  raw_data <- jsonlite::fromJSON(httr::content(response, "text"))
-
-  if (is.null(raw_data$transactions) || length(raw_data$transactions) == 0) {
-    warning("No whale transactions found in the specified window.")
-    return(create_empty_positioning(source = "Whale Alert (No Data)"))
-  }
-
-  whale_df <- as.data.frame(raw_data$transactions) %>%
-    dplyr::mutate(
-      from_type = from$owner_type,
-      to_type = to$owner_type,
-      from_owner = from$owner,
-      to_owner = to$owner
-    )
-
-  max_amount <- max(whale_df$amount_usd, na.rm = TRUE)
-  if (is.infinite(max_amount)) max_amount <- 0
-
-  metrics <- whale_df %>%
-    dplyr::summarise(
-      inflow_usd  = sum(amount_usd[from_type == "unknown" & to_type == "exchange"], na.rm = TRUE),
-      outflow_usd = sum(amount_usd[from_type == "exchange" & to_type == "unknown"], na.rm = TRUE),
-      tx_count = dplyr::n(),
-      pct = sum(amount_usd > max(whale_df$amount_usd)/2, na.rm = TRUE) / dplyr::n() * 100
-    ) %>%
-    dplyr::mutate(netflow_usd = inflow_usd - outflow_usd)
-
-  flow_regime <- dplyr::case_when(
-    metrics$netflow_usd > (max_amount * 10)  ~ "Extreme Inflows (Heavy Selling Pressure)",
-    metrics$netflow_usd > 0                     ~ "Net Inflows (Bearish Bias)",
-    metrics$netflow_usd < -(max_amount * 10) ~ "Extreme Outflows (Heavy Accumulation)",
-    metrics$netflow_usd < 0                     ~ "Net Outflows (Bullish Bias)",
-    TRUE                                        ~ "Neutral / Balanced"
-  )
-
-  whale_signal <- dplyr::case_when(
-    metrics$pct > 50  ~ "High Whale Intensity (Volatility Expected)",
-    metrics$pct < 10   ~ "Low Whale Activity",
-    TRUE               ~ "Normal Whale Activity"
-  )
-
-  result <- list(
-    exchange_positioning = list(
-      netflow_summary = metrics,
-      flow_regime = flow_regime,
-      top_exchange_target = head(whale_df$to_owner[whale_df$to_type == "exchange"], 1)
-    ),
-    whale_activity = list(
-      total_tx = metrics$tx_count,
-      whale_signal = whale_signal,
-      largest_move_usd = max(whale_df$amount_usd, na.rm = TRUE)
-    ),
-    raw_positioning_data = whale_df,
-    data_source = "Whale Alert API",
-    google_trends = get_google_trends(google_trends_keywords)
-  )
-
-  class(result) <- "positioning_data"
-  return(result)
+  }, error = function(e) {
+    warning("Failed to fetch Fear & Greed Index: ", e$message)
+    return(NULL)
+  })
 }
 
 #' Create empty positioning data structure
@@ -1652,9 +1648,11 @@ create_empty_positioning <- function(source = "Unknown") {
       whale_signal = paste("No Data -", source),
       largest_move_usd = 0
     ),
-    raw_positioning_data = data.frame(),
-    data_source = source,
-    google_trends = NULL
+    raw_positioning_data = list(
+      status = source,
+      timestamp = Sys.time()
+    ),
+    data_source = source
   )
 
   class(result) <- "positioning_data"
@@ -1672,22 +1670,20 @@ print.positioning_data <- function(x, ...) {
   cat(paste(rep("=", 80), collapse = ""), "\n")
 
   cat("\n📊 FLOW REGIME:", x$exchange_positioning$flow_regime, "\n")
-  cat("   Net Flow: $", format(x$exchange_positioning$netflow_summary$netflow_usd,
-                               big.mark = ",", scientific = FALSE), "\n")
-  cat("   Transactions:", x$exchange_positioning$netflow_summary$tx_count, "\n")
+
+  netflow <- x$exchange_positioning$netflow_summary$netflow_usd
+  cat("   Net Flow: $", format(netflow, big.mark = ",", scientific = FALSE), "\n")
+  cat("   Transactions Analyzed:", x$exchange_positioning$netflow_summary$tx_count, "\n")
+
+  if (x$exchange_positioning$netflow_summary$pct > 0) {
+    cat("   Top 5 Depositors Share:", round(x$exchange_positioning$netflow_summary$pct, 1), "%\n")
+  }
 
   cat("\n🐋 WHALE ACTIVITY:", x$whale_activity$whale_signal, "\n")
-  cat("   Total Whale Wallets/TX:", x$whale_activity$total_tx, "\n")
-  cat("   Largest Move: $", format(x$whale_activity$largest_move_usd,
-                                   big.mark = ",", scientific = FALSE), "\n")
-
-  if (!is.null(x$google_trends)) {
-    cat("\n📈 GOOGLE TRENDS\n")
-    cat("   Score:", round(x$google_trends$current_sentiment, 1), "/100\n")
-    cat("   Signal:", x$google_trends$sentiment_signal, "\n")
-  }
+  cat("   Unique Whale Wallets:", x$whale_activity$total_tx, "\n")
+  cat("   Largest Vault: $", format(x$whale_activity$largest_move_usd,
+                                    big.mark = ",", scientific = FALSE), "\n")
 
   cat("\n", paste(rep("=", 80), collapse = ""), "\n")
   invisible(x)
 }
-

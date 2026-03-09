@@ -794,11 +794,12 @@ get_vault_v1_transactions <- function(vault_address, first = 10, skip = 0, chain
 #' @export
 get_morpho_positioning <- function(chain_ids = c(1, 8453),
                                    min_exposure_usd = 1e5,
-                                   include_depositors = FALSE,
-                                   include_flows = FALSE,
-                                   top_n_vaults = 10,
-                                   max_depositors_per_vault = 20,
-                                   human_readable = TRUE) {
+                                   include_depositors = TRUE,
+                                   include_flows = TRUE,
+                                   top_n_vaults = 5,
+                                   max_depositors_per_vault = 10,
+                                   human_readable = TRUE,
+                                   verbose = FALSE) {
 
   #---------------------------------------------------------------------------
   # INITIALIZATION
@@ -949,7 +950,7 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
     # Determine whale signal
     whale_signal <- dplyr::case_when(
       n_large_vaults >= 1 ~ paste0("High Whale Intensity (", n_large_vaults,
-                                   " vault", ifelse(n_large_vaults > 1, "s > $100M", " > $100M)")),
+                                   " vault", ifelse(n_large_vaults > 1, "s > $100M)", " > $100M)")),
       n_medium_vaults >= 3 ~ paste0("Moderate Whale Activity (", n_medium_vaults, " vaults $10M-$100M)"),
       n_medium_vaults >= 1 ~ "Normal Whale Activity",
       total_btc_exposure_usd > 1e6 ~ "Low Whale Activity",
@@ -997,7 +998,7 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
             ) %>%
             dplyr::arrange(dplyr::desc(assets_usd))
 
-          message("      Found ", nrow(depositor_list[[i]]), " depositors for ", vault_name)
+          if (verbose) message("      Found ", nrow(depositor_list[[i]]), " depositors for ", vault_name)
         }
       }
 
@@ -1035,7 +1036,7 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
         vault_tvl <- all_btc_vaults$total_assets_usd[i]
         share_price <- all_btc_vaults$share_price_usd[i]
 
-        message("    Processing: ", vault_name, " ($", format(round(vault_tvl / 1e6, 1), big.mark = ","), "M)")
+        if (verbose) message("    Processing: ", vault_name, " ($", format(round(vault_tvl / 1e6, 1), big.mark = ","), "M)")
 
         # Fetch up to 1000 transactions
         all_txns <- tryCatch({
@@ -1109,14 +1110,19 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
             stringsAsFactors = FALSE
           )
 
-          if (!is.na(netflow_usd)) {
-            message("      Fetched ", nrow(all_txns), " transactions (", days_covered, " days) | Net flow: $",
-                    format(round(netflow_usd / 1e6, 2), big.mark = ","), "M (",
-                    round(netflow_pct, 1), "%)")
-          } else {
-            message("      Fetched ", nrow(all_txns), " transactions (", days_covered, " days) | Net flow: ",
-                    round((inflow - outflow) / 1e6, 2), "M units")
+          if (verbose) {
+
+            if (!is.na(netflow_usd)) {
+              message("      Fetched ", nrow(all_txns), " transactions (", days_covered, " days) | Net flow: $",
+                      format(round(netflow_usd / 1e6, 2), big.mark = ","), "M (",
+                      round(netflow_pct, 1), "%)")
+            } else {
+              message("      Fetched ", nrow(all_txns), " transactions (", days_covered, " days) | Net flow: ",
+                      round((inflow - outflow) / 1e6, 2), "M units")
+            }
+
           }
+
         } else {
           message("      No transaction history found")
         }
