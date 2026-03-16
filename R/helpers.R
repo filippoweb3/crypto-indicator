@@ -913,33 +913,43 @@ get_macro <- function(fred_api_key = NULL, start_date = "2015-01-01"){
     ifelse(tail(m2_yoy, 1) < 0, "Contracting", "Stable")
   )
 
-  # US Dollar Index (DXY) - Inverse correlation with crypto
+  #---------------------------------------------------------------------------
+  # US Dollar Index (DXY) - Using FRED's Trade Weighted Dollar Index
+  #---------------------------------------------------------------------------
   dxy <- tryCatch({
-    # Suppress the missing values warning
     suppressWarnings({
-      quantmod::getSymbols("DX-Y.NYB", src = "yahoo", auto.assign = FALSE)
+      fredr::fredr(
+        series_id = "DTWEXBGS",  # Trade Weighted U.S. Dollar Index: Broad
+        observation_start = as.Date(start_date),
+        observation_end = Sys.Date()
+      )
     })
   }, error = function(e) {
-    message("Note: DXY data unavailable from Yahoo Finance")
+    message("Note: DXY data unavailable from FRED")
     return(NULL)
   })
 
-  if (!is.null(dxy)) {
-    # Check for missing values
-    if (any(is.na(dxy))) {
-      # Fill missing values using last observation carried forward
-      dxy <- zoo::na.locf(dxy, na.rm = FALSE)
-      # Fill any remaining leading NAs with next observation
-      dxy <- zoo::na.locf(dxy, fromLast = TRUE, na.rm = FALSE)
-    }
+  # Handle missing values if any
+  if (!is.null(dxy) && nrow(dxy) > 0) {
+    # Get the latest value
+    latest_dxy <- tail(dxy$value, 1)
+
+    # Determine dollar regime
+    dollar_regime <- ifelse(
+      latest_dxy > 120, "Strong Dollar (Bearish Crypto)",  # DTWEXBGS has different scale!
+      ifelse(latest_dxy < 110, "Weak Dollar (Bullish Crypto)", "Neutral")
+    )
+
+    # For scoring (note: thresholds adjusted for DTWEXBGS scale)
+    dollar_score <- ifelse(latest_dxy > 120, -1,
+                           ifelse(latest_dxy < 110, 1, 0))
+  } else {
+    dollar_regime <- "Unknown"
+    dollar_score <- 0
+    warning("Dollar index data unavailable")
   }
 
-  dollar_regime <- ifelse(
-    !is.null(dxy) && tail(quantmod::Cl(dxy), 1) > 100, "Strong Dollar (Bearish Crypto)",
-    ifelse(!is.null(dxy) && tail(quantmod::Cl(dxy), 1) < 90, "Weak Dollar (Bullish Crypto)", "Neutral")
-  )
-
-  # 10-Year Treasury Yield - Risk-free rate competition
+  # 10-Year Treasury Yield
   treasury_10y <- fredr::fredr(
     series_id = "DGS10",
     observation_start = as.Date(start_date),
@@ -953,12 +963,12 @@ get_macro <- function(fred_api_key = NULL, start_date = "2015-01-01"){
     observation_end = Sys.Date()
   )
 
-  aggregated <- dplyr::full_join(treasury_10y, inflation_expect, by ="date")
-  aggregated <- aggregated[,c(1,3,7)]
+  aggregated <- dplyr::full_join(treasury_10y, inflation_expect, by = "date")
+  aggregated <- aggregated[, c(1, 3, 7)]
   colnames(aggregated) <- c("date", "DGS10", "T5YIE")
   aggregated$real_rates <- aggregated$DGS10 - aggregated$T5YIE
 
-  rate_regime = ifelse(
+  rate_regime <- ifelse(
     tail(treasury_10y$value, 1) > 3, "High Rates (Risk-Off)",
     ifelse(tail(treasury_10y$value, 1) < 1, "Low Rates (Risk-On)", "Neutral")
   )
@@ -967,8 +977,8 @@ get_macro <- function(fred_api_key = NULL, start_date = "2015-01-01"){
                      ifelse(tail(m2_yoy, 1) < 0, -1, 0))
   rate_score <- ifelse(tail(treasury_10y$value, 1) > 3, -1,
                        ifelse(tail(treasury_10y$value, 1) < 1, 1, 0))
-  dollar_score <- ifelse(!is.null(dxy) && tail(quantmod::Cl(dxy), 1) > 100, -1,
-                         ifelse(!is.null(dxy) && tail(quantmod::Cl(dxy), 1) < 90, 1, 0))
+
+  # Dollar score already calculated above
 
   composite_risk_score <- (m2_score + rate_score + dollar_score) / 3
 
@@ -979,7 +989,7 @@ get_macro <- function(fred_api_key = NULL, start_date = "2015-01-01"){
         m2_yoy = m2_yoy,
         m2_mom = m2_mom,
         liquidity_regime = liquidity_regime
-        ),
+      ),
       rates = list(
         treasury_10y = treasury_10y,
         real_rates = aggregated$real_rates,
@@ -987,12 +997,12 @@ get_macro <- function(fred_api_key = NULL, start_date = "2015-01-01"){
       ),
       dollar = list(
         dxy = dxy,
-        dollar_regime = dollar_regime
-        ),
+        dollar_regime = dollar_regime,
+        latest_value = if (!is.null(dxy)) tail(dxy$value, 1) else NA
+      ),
       composite_risk_score = composite_risk_score
-      )
     )
-
+  )
 }
 
 
@@ -1483,147 +1493,6 @@ get_positioning <- function(include_depositors = TRUE,
   return(result)
 }
 
-#' Fetch Google Trends Data (Simple Version)
-#'
-#' @description
-#' Simple function to fetch Google Trends data with basic retry logic.
-#' Returns sentiment score and signal for the last 7 days.
-#'
-#' @param keywords Character vector of keywords to search for. Default "bitcoin".
-#' @param max_retries Integer. Maximum number of retry attempts for rate limiting. Default 3.
-#'
-#' @return A list containing:
-#'   \itemize{
-#'     \item \code{current_sentiment}: Average search interest over last 7 days (0-100)
-#'     \item \code{sentiment_signal}: Categorical interpretation of sentiment
-#'     \item \code{interest_over_time}: Full historical data
-#'     \item \code{keywords}: Keywords used
-#'   }
-#' @export
-#'
-#' @importFrom gtrendsR gtrends
-#' @importFrom dplyr case_when
-get_google_trends <- function(keywords = "bitcoin", max_retries = 3) {
-
-  for (attempt in 1:max_retries) {
-
-    result <- tryCatch({
-      # Fetch Google Trends data
-      trends <- gtrendsR::gtrends(
-        keyword = keywords,
-        time = "today 3-m",
-        gprop = "web"
-      )
-
-      # Check if we got data
-      if (is.null(trends$interest_over_time)) {
-        warning("No interest_over_time data returned from Google Trends")
-        return(NULL)
-      }
-
-      # Process the data
-      interest_data <- trends$interest_over_time
-      interest_data$date <- as.Date(interest_data$date)
-
-      # Calculate 7-day average
-      recent_interest <- interest_data[interest_data$date > Sys.Date() - 7, ]
-      sentiment_score <- mean(recent_interest$hits, na.rm = TRUE)
-
-      # Generate sentiment signal
-      sentiment_signal <- dplyr::case_when(
-        sentiment_score > 80 ~ "Extreme Interest (Potential Top)",
-        sentiment_score > 60 ~ "High Interest",
-        sentiment_score > 20 ~ "Normal Interest",
-        TRUE ~ "Low Interest (Potential Bottom)"
-      )
-
-      # Return results
-      return(list(
-        interest_over_time = interest_data,
-        related_queries = trends$related_queries,
-        interest_by_region = trends$interest_by_region,
-        current_sentiment = sentiment_score,
-        sentiment_signal = sentiment_signal,
-        keywords = keywords
-      ))
-
-    }, error = function(e) {
-      if (grepl("429", e$message)) {
-        wait_time <- 5 * attempt
-        message("Google Trends rate limited (429). Retrying in ", wait_time, "s (attempt ", attempt, "/", max_retries, ")")
-        Sys.sleep(wait_time)
-        return(NULL)
-      } else {
-        warning("Google Trends error: ", e$message)
-        return(stop(e$message))
-      }
-    })
-
-    if (!is.null(result)) return(result)
-  }
-
-  warning("Failed to fetch Google Trends after ", max_retries, " attempts")
-  return(NULL)
-}
-
-#' Fetch Fear & Greed Index using cryptoQuotes
-#'
-#' @description
-#' Retrieves the Crypto Fear & Greed Index from alternative.me via the cryptoQuotes package.
-#' The index ranges from 0 (Extreme Fear) to 100 (Extreme Greed).
-#'
-#' @param days Integer. Number of days of historical data to fetch. Default 30.
-#'
-#' @return A list containing:
-#'   \itemize{
-#'     \item \code{current_value}: Current Fear & Greed Index value (0-100)
-#'     \item \code{current_classification}: Text classification
-#'     \item \code{timestamp}: When the data was fetched
-#'     \item \code{history}: xts object with historical values
-#'   }
-#' @export
-#'
-#' @importFrom cryptoQuotes get_fgindex
-get_fear_greed <- function(days = 30) {
-
-  tryCatch({
-    # Fetch from cryptoQuotes
-    fgi <- cryptoQuotes::get_fgindex(
-      from = Sys.Date() - days
-    )
-
-    if (is.null(fgi) || nrow(fgi) == 0) {
-      warning("No Fear & Greed data returned")
-      return(NULL)
-    }
-
-    # Get current value (most recent)
-    current_value <- as.numeric(tail(fgi$fgi, 1))
-
-    # Classify the value
-    classification <- dplyr::case_when(
-      current_value >= 75 ~ "Extreme Greed",
-      current_value >= 55 ~ "Greed",
-      current_value >= 45 ~ "Neutral",
-      current_value >= 25 ~ "Fear",
-      TRUE ~ "Extreme Fear"
-    )
-
-    # Return structured data
-    return(list(
-      current_value = current_value,
-      current_classification = classification,
-      timestamp = Sys.time(),
-      history = fgi,
-      source = "alternative.me via cryptoQuotes"
-    ))
-
-  }, error = function(e) {
-    warning("Failed to fetch Fear & Greed Index: ", e$message)
-    return(NULL)
-  })
-}
-
 #' Create empty positioning data structure
 #'
 #' @param source Character string indicating the source that failed
@@ -1686,4 +1555,130 @@ print.positioning_data <- function(x, ...) {
 
   cat("\n", paste(rep("=", 80), collapse = ""), "\n")
   invisible(x)
+}
+
+#' Fetch Google Trends Data
+#'
+#' @description
+#' Simple function to fetch Google Trends data. Returns sentiment score and signal.
+#'
+#' @param keywords Character vector of keywords to search for. Default "bitcoin".
+#'
+#' @return A list containing:
+#'   \itemize{
+#'     \item \code{current_sentiment}: Average search interest over last 7 days (0-100)
+#'     \item \code{sentiment_signal}: Categorical interpretation of sentiment
+#'     \item \code{interest_over_time}: Full historical data
+#'     \item \code{keywords}: Keywords used
+#'   }
+#' @export
+#'
+#' @importFrom gtrendsR gtrends
+#' @importFrom dplyr case_when
+get_google_trends <- function(keywords = "bitcoin") {
+
+  result <- tryCatch({
+    # Fetch Google Trends data
+    trends <- gtrendsR::gtrends(
+      keyword = keywords,
+      time = "today 3-m",
+      gprop = "web"
+    )
+
+    # Check if we got data
+    if (is.null(trends$interest_over_time)) {
+      warning("No interest_over_time data returned from Google Trends")
+      return(NULL)
+    }
+
+    # Process the data
+    interest_data <- trends$interest_over_time
+    interest_data$date <- as.Date(interest_data$date)
+
+    # Calculate 7-day average
+    recent_interest <- interest_data[interest_data$date > Sys.Date() - 7, ]
+    sentiment_score <- mean(recent_interest$hits, na.rm = TRUE)
+
+    # Generate sentiment signal
+    sentiment_signal <- dplyr::case_when(
+      sentiment_score > 80 ~ "Extreme Interest (Potential Top)",
+      sentiment_score > 60 ~ "High Interest",
+      sentiment_score > 20 ~ "Normal Interest",
+      TRUE ~ "Low Interest (Potential Bottom)"
+    )
+
+    # Return results
+    return(list(
+      interest_over_time = interest_data,
+      related_queries = trends$related_queries,
+      interest_by_region = trends$interest_by_region,
+      current_sentiment = sentiment_score,
+      sentiment_signal = sentiment_signal,
+      keywords = keywords
+    ))
+
+  }, error = function(e) {
+    warning("Google Trends error: ", e$message)
+    return(NULL)
+  })
+
+  return(result)
+}
+
+#' Fetch Fear & Greed Index using cryptoQuotes
+#'
+#' @description
+#' Retrieves the Crypto Fear & Greed Index from alternative.me via the cryptoQuotes package.
+#' The index ranges from 0 (Extreme Fear) to 100 (Extreme Greed).
+#'
+#' @param days Integer. Number of days of historical data to fetch. Default 30.
+#'
+#' @return A list containing:
+#'   \itemize{
+#'     \item \code{current_value}: Current Fear & Greed Index value (0-100)
+#'     \item \code{current_classification}: Text classification
+#'     \item \code{timestamp}: When the data was fetched
+#'     \item \code{history}: xts object with historical values
+#'   }
+#' @export
+#'
+#' @importFrom cryptoQuotes get_fgindex
+get_fear_greed <- function(days = 30) {
+
+  tryCatch({
+    # Fetch from cryptoQuotes
+    fgi <- cryptoQuotes::get_fgindex(
+      from = Sys.Date() - days
+    )
+
+    if (is.null(fgi) || nrow(fgi) == 0) {
+      warning("No Fear & Greed data returned")
+      return(NULL)
+    }
+
+    # Get current value (most recent)
+    current_value <- as.numeric(tail(fgi$fgi, 1))
+
+    # Classify the value
+    classification <- dplyr::case_when(
+      current_value >= 75 ~ "Extreme Greed",
+      current_value >= 55 ~ "Greed",
+      current_value >= 45 ~ "Neutral",
+      current_value >= 25 ~ "Fear",
+      TRUE ~ "Extreme Fear"
+    )
+
+    # Return structured data
+    return(list(
+      current_value = current_value,
+      current_classification = classification,
+      timestamp = Sys.time(),
+      history = fgi,
+      source = "alternative.me via cryptoQuotes"
+    ))
+
+  }, error = function(e) {
+    warning("Failed to fetch Fear & Greed Index: ", e$message)
+    return(NULL)
+  })
 }

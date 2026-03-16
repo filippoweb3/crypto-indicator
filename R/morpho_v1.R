@@ -969,13 +969,28 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
       depositor_list <- list()
 
       for (i in 1:n_vaults_to_process) {
-        vault_addr <- all_btc_vaults$vault_address[i]
+        # Get vault info - check the actual column names from all_btc_vaults
+        # From your earlier code, it might be "vault_address" or just "address"
+        vault_addr_col <- if ("vault_address" %in% names(all_btc_vaults)) {
+          all_btc_vaults$vault_address[i]
+        } else if ("address" %in% names(all_btc_vaults)) {
+          all_btc_vaults$address[i]
+        } else {
+          # Try to find any column that might contain the address
+          address_candidates <- grep("address", names(all_btc_vaults), value = TRUE, ignore.case = TRUE)
+          if (length(address_candidates) > 0) {
+            all_btc_vaults[[address_candidates[1]]][i]
+          } else {
+            stop("Cannot find vault address column in all_btc_vaults")
+          }
+        }
+
         vault_name <- all_btc_vaults$name[i]
         vault_tvl <- all_btc_vaults$total_assets_usd[i]
 
         depositors <- tryCatch({
           get_vault_v1_depositors(
-            vault_addr,
+            vault_addr_col,
             first = max_depositors_per_vault,
             verbose = FALSE
           )
@@ -987,7 +1002,7 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
         if (!is.null(depositors) && nrow(depositors) > 0) {
           depositor_list[[i]] <- depositors %>%
             dplyr::mutate(
-              vault_address = vault_addr,
+              vault_address = vault_addr_col,
               vault_name = vault_name,
               vault_tvl = vault_tvl,
               vault_rank = i
@@ -1191,24 +1206,132 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
       )
 
     #---------------------------------------------------------------------------
-    # CALCULATE WHALE CONCENTRATION METRICS
+    # CALCULATE WHALE CONCENTRATION METRICS - COMPLETELY REWRITTEN
     #---------------------------------------------------------------------------
     whale_concentration <- NULL
+
     if (!is.null(all_top_depositors) && nrow(all_top_depositors) > 0) {
 
-      hhi <- sum((all_top_depositors$share_pct)^2, na.rm = TRUE)
+      # Step 1: Check what columns we actually have
+      message("    Debug: all_top_depositors columns: ", paste(names(all_top_depositors), collapse = ", "))
 
+      # Step 2: Calculate total market TVL
+      if ("vault_tvl" %in% names(all_top_depositors)) {
+        total_market_tvl <- sum(all_top_depositors$vault_tvl, na.rm = TRUE)
+      } else {
+        # If vault_tvl doesn't exist, use sum of assets_usd as proxy
+        message("    Warning: vault_tvl column not found, using sum of assets_usd")
+        total_market_tvl <- sum(all_top_depositors$assets_usd, na.rm = TRUE)
+      }
+
+      # Step 3: Aggregate by user address (combine holdings across vaults)
+      user_addresses <- unique(all_top_depositors$user_address)
+
+      # Initialize vectors for the aggregated data
+      total_usd_vec <- numeric(length(user_addresses))
+      vaults_present_vec <- character(length(user_addresses))
+
+      for (j in seq_along(user_addresses)) {
+        addr <- user_addresses[j]
+        user_rows <- all_top_depositors[all_top_depositors$user_address == addr, ]
+        total_usd_vec[j] <- sum(user_rows$assets_usd, na.rm = TRUE)
+
+        # Check if vault_name exists
+        if ("vault_name" %in% names(user_rows)) {
+          vaults_present_vec[j] <- paste(unique(user_rows$vault_name), collapse = ", ")
+        } else {
+          vaults_present_vec[j] <- "Unknown vaults"
+        }
+      }
+
+      # Create market share data frame
+      market_share_df <- data.frame(
+        user_address = user_addresses,
+        total_usd = total_usd_vec,
+        vaults_present = vaults_present_vec,
+        stringsAsFactors = FALSE
+      )
+
+      # Calculate market share percentages
+      market_share_df$market_share_pct <- (market_share_df$total_usd / total_market_tvl) * 100
+
+      # Sort by market share
+      market_share_df <- market_share_df[order(market_share_df$market_share_pct, decreasing = TRUE), ]
+
+      # Calculate HHI
+      hhi <- sum(market_share_df$market_share_pct^2, na.rm = TRUE)
+      hhi <- min(hhi, 10000)  # Cap at theoretical maximum
+
+      # Calculate top 5 share
+      top_5_share <- sum(head(market_share_df$market_share_pct, 5), na.rm = TRUE)
+
+      # Categorize whales by size
+      whale_size_category <- character(nrow(market_share_df))
+      whale_size_category[market_share_df$total_usd > 10e6] <- "Mega"
+      whale_size_category[market_share_df$total_usd > 1e6 & market_share_df$total_usd <= 10e6] <- "Regular"
+      whale_size_category[market_share_df$total_usd > 100e3 & market_share_df$total_usd <= 1e6] <- "Dolphin"
+      whale_size_category[market_share_df$total_usd <= 100e3 | is.na(market_share_df$total_usd)] <- "Retail"
+
+      market_share_df$whale_size_category <- whale_size_category
+
+      # Calculate vault-level HHI (if we have vault_address)
+      vault_level_hhi <- NULL
+
+      if ("vault_address" %in% names(all_top_depositors)) {
+        vault_addresses <- unique(all_top_depositors$vault_address)
+
+        vault_hhi_list <- list()
+
+        for (j in seq_along(vault_addresses)) {
+          v_addr <- vault_addresses[j]
+          vault_rows <- all_top_depositors[all_top_depositors$vault_address == v_addr, ]
+
+          # Get vault info from first row
+          v_name <- if ("vault_name" %in% names(vault_rows)) vault_rows$vault_name[1] else "Unknown"
+          v_tvl <- if ("vault_tvl" %in% names(vault_rows)) vault_rows$vault_tvl[1] else NA_real_
+
+          # Calculate vault HHI
+          if ("share_pct" %in% names(vault_rows)) {
+            v_hhi <- sum(vault_rows$share_pct^2, na.rm = TRUE)
+
+            # Calculate vault top 5 share
+            sorted_shares <- sort(vault_rows$share_pct, decreasing = TRUE)
+            v_top_5 <- sum(head(sorted_shares, 5), na.rm = TRUE)
+          } else {
+            v_hhi <- NA_real_
+            v_top_5 <- NA_real_
+          }
+
+          vault_hhi_list[[j]] <- data.frame(
+            vault_address = v_addr,
+            vault_name = v_name,
+            vault_tvl = v_tvl,
+            vault_hhi = v_hhi,
+            vault_top_5 = v_top_5,
+            stringsAsFactors = FALSE
+          )
+        }
+
+        vault_level_hhi <- do.call(rbind, vault_hhi_list)
+      }
+
+      # Create whale concentration list
       whale_concentration <- list(
-        total_whale_wallets = length(unique(all_top_depositors$user_address)),
-        mega_whales = sum(all_top_depositors$whale_size == "🐋 Mega Whale (>$10M)", na.rm = TRUE),
-        regular_whales = sum(all_top_depositors$whale_size == "🐋 Whale ($1M-$10M)", na.rm = TRUE),
+        total_whale_wallets = nrow(market_share_df),
+        mega_whales = sum(market_share_df$whale_size_category == "Mega", na.rm = TRUE),
+        regular_whales = sum(market_share_df$whale_size_category == "Regular", na.rm = TRUE),
+        dolphins = sum(market_share_df$whale_size_category == "Dolphin", na.rm = TRUE),
+        retail = sum(market_share_df$whale_size_category == "Retail", na.rm = TRUE),
         hhi = hhi,
         hhi_interpretation = dplyr::case_when(
           hhi > 2500 ~ "Highly Concentrated",
           hhi > 1500 ~ "Moderately Concentrated",
+          hhi > 1000 ~ "Slightly Concentrated",
           TRUE ~ "Competitive"
         ),
-        top_5_share = sum(head(all_top_depositors$share_pct, 5), na.rm = TRUE)
+        top_5_share = top_5_share,
+        market_share_data = market_share_df,
+        vault_level = vault_level_hhi
       )
     }
 
@@ -1237,6 +1360,7 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
 
     result$top_vaults <- top_vaults
     result$top_depositors <- all_top_depositors
+    result$market_share <- if (!is.null(all_top_depositors)) market_share_df else NULL
     result$vault_flows <- vault_flows
     result$whale_concentration <- whale_concentration
     result$raw_allocations <- allocations
@@ -1254,7 +1378,9 @@ get_morpho_positioning <- function(chain_ids = c(1, 8453),
       result$interpretation <- paste0(
         result$interpretation,
         "Identified ", whale_concentration$total_whale_wallets, " unique whale wallets across top vaults. ",
-        "Market concentration: ", whale_concentration$hhi_interpretation, "."
+        "Market concentration HHI: ", round(whale_concentration$hhi, 1), " (",
+        whale_concentration$hhi_interpretation, "). ",
+        "Top 5 whales control ", round(whale_concentration$top_5_share, 1), "% of total value."
       )
     }
 
@@ -1399,18 +1525,58 @@ print.morpho_positioning_data <- function(x, ...) {
     }
 
     #---------------------------------------------------------------------------
-    # WHALE CONCENTRATION SECTION
+    # WHALE CONCENTRATION SECTION - UPDATED
     #---------------------------------------------------------------------------
     if (!is.null(x$whale_concentration)) {
       cat("\n", paste(rep("━", 80), collapse = ""), "\n")
       cat("🐋 WHALE CONCENTRATION ANALYSIS\n")
       cat(paste(rep("━", 80), collapse = ""), "\n")
-      cat("Unique Whale Wallets:", x$whale_concentration$total_whale_wallets, "\n")
-      cat("Mega Whales (>$10M):", x$whale_concentration$mega_whales, "\n")
-      cat("Regular Whales ($1M-$10M):", x$whale_concentration$regular_whales, "\n")
-      cat("Market Concentration (HHI):", format(round(x$whale_concentration$hhi, 1), big.mark = ","),
+
+      # Market-wide concentration
+      cat("📊 MARKET-WIDE CONCENTRATION\n")
+      cat("  Unique Whale Wallets:", x$whale_concentration$total_whale_wallets, "\n")
+      cat("  Mega Whales (>$10M):", x$whale_concentration$mega_whales, "\n")
+      cat("  Regular Whales ($1M-$10M):", x$whale_concentration$regular_whales, "\n")
+      if (!is.null(x$whale_concentration$dolphins)) {
+        cat("  Dolphins ($100k-$1M):", x$whale_concentration$dolphins, "\n")
+      }
+      cat("  Market Concentration (HHI):", format(round(x$whale_concentration$hhi, 1), big.mark = ","),
           "(", x$whale_concentration$hhi_interpretation, ")\n")
-      cat("Top 5 Depositors Share:", round(x$whale_concentration$top_5_share, 1), "%\n")
+      cat("  Top 5 Depositors Share:", round(x$whale_concentration$top_5_share, 1), "% of total value\n")
+
+      # Show top whales by market share
+      if (!is.null(x$whale_concentration$market_share_data) && nrow(x$whale_concentration$market_share_data) > 0) {
+        cat("\n  🏆 TOP WHALES BY MARKET SHARE\n")
+        top_whales <- utils::head(x$whale_concentration$market_share_data, 5)
+        for (j in 1:nrow(top_whales)) {
+          addr_short <- paste0(substr(top_whales$user_address[j], 1, 6), "...")
+          cat("    ", j, ". ", addr_short, ": $",
+              format(round(top_whales$total_usd[j] / 1e6, 1), big.mark = ","), "M (",
+              round(top_whales$market_share_pct[j], 1), "%)\n", sep = "")
+          if (top_whales$vaults_present[j] != "Unknown vaults") {
+            cat("       Vaults: ", top_whales$vaults_present[j], "\n")
+          }
+        }
+      }
+
+      # Vault-level concentration
+      if (!is.null(x$whale_concentration$vault_level) && nrow(x$whale_concentration$vault_level) > 0) {
+        cat("\n  🏦 VAULT-LEVEL CONCENTRATION\n")
+        vault_level_display <- x$whale_concentration$vault_level %>%
+          dplyr::mutate(
+            vault_display = paste0(vault_name, " ($", format(round(vault_tvl/1e6, 1), big.mark = ","), "M)"),
+            hhi_display = paste0(round(vault_hhi, 1), " (",
+                                 ifelse(vault_hhi > 2500, "High",
+                                        ifelse(vault_hhi > 1500, "Moderate", "Low")), ")"),
+            top_5_display = paste0(round(vault_top_5, 1), "%")
+          ) %>%
+          dplyr::select(
+            Vault = vault_display,
+            `Vault HHI` = hhi_display,
+            `Top 5 Share` = top_5_display
+          )
+        print(vault_level_display)
+      }
     }
 
     #---------------------------------------------------------------------------
@@ -1429,11 +1595,11 @@ print.morpho_positioning_data <- function(x, ...) {
     }
 
     #---------------------------------------------------------------------------
-    # TOP DEPOSITORS SECTION
+    # TOP DEPOSITORS SECTION (Per-Vault View)
     #---------------------------------------------------------------------------
     if (!is.null(x$top_depositors) && nrow(x$top_depositors) > 0) {
       cat("\n", paste(rep("━", 80), collapse = ""), "\n")
-      cat("👥 TOP DEPOSITORS ACROSS VAULTS (Whale Wallets)\n")
+      cat("👥 TOP DEPOSITORS BY VAULT\n")
       cat(paste(rep("━", 80), collapse = ""), "\n")
 
       # Show summary by vault
@@ -1459,13 +1625,14 @@ print.morpho_positioning_data <- function(x, ...) {
 
       print(vault_summary)
 
-      # Show top 10 depositors overall
-      cat("\nTop 10 Largest Depositors Overall:\n")
+      # Show top 10 depositors overall (per-vault view)
+      cat("\nTop 10 Largest Depositors (Per-Vault):\n")
       top_deps <- x$top_depositors %>%
         dplyr::arrange(dplyr::desc(assets_usd)) %>%
         utils::head(10) %>%
         dplyr::mutate(
-          user_short = paste0(substr(user_address, 1, 6), "...", substr(user_address, nchar(user_address)-4, nchar(user_address))),
+          user_short = paste0(substr(user_address, 1, 6), "...",
+                              substr(user_address, nchar(user_address)-4, nchar(user_address))),
           assets_formatted = paste0("$", format(round(assets_usd / 1e6, 2), big.mark = ","), "M"),
           share_formatted = paste0(round(share_pct, 2), "%")
         ) %>%
@@ -1473,7 +1640,7 @@ print.morpho_positioning_data <- function(x, ...) {
           Vault = vault_name,
           Whale = user_short,
           Amount = assets_formatted,
-          Share = share_formatted,
+          `Vault Share` = share_formatted,
           Size = whale_size
         )
       print(top_deps)
@@ -1493,3 +1660,4 @@ print.morpho_positioning_data <- function(x, ...) {
   cat("\n", paste(rep("=", 80), collapse = ""), "\n")
   invisible(x)
 }
+
