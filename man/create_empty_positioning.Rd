@@ -10,9 +10,11 @@ create_empty_positioning(source = "Unknown")
 \item{source}{Character string indicating the source that failed}
 }
 \value{
-A list with the same structure as get_positioning but with empty data
+A list with the same structure as \code{\link{get_positioning}} but with empty data
 }
 \description{
-Create empty positioning data structure
+Internal function to create a standardized empty positioning structure
+when data fetching fails. Ensures downstream functions receive a valid
+object even when no data is available.
 }
 \keyword{internal}

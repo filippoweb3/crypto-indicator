@@ -2,23 +2,23 @@
 % Please edit documentation in R/morpho_v1.R
 \name{.fetch_vault_v1_depositors}
 \alias{.fetch_vault_v1_depositors}
-\title{Internal function to fetch vault depositors for a specific chain}
+\title{Fetch vault depositors for a specific chain}
 \usage{
 .fetch_vault_v1_depositors(vault_address, first, chain_id, verbose)
 }
 \arguments{
 \item{vault_address}{Character. Ethereum address of the vault}
 
-\item{first}{Integer. Number of depositors}
+\item{first}{Integer. Number of depositors to return}
 
 \item{chain_id}{Integer. Chain ID}
 
-\item{verbose}{Logical. Print progress}
+\item{verbose}{Logical. Print progress information}
 }
 \value{
-A tibble with depositor information
+A tibble with depositor information, including share percentages
 }
 \description{
-Internal function to fetch vault depositors for a specific chain
+Internal function to retrieve depositor information for a vault on a specified chain.
 }
 \keyword{internal}

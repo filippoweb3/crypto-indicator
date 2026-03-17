@@ -2,7 +2,7 @@
 % Please edit documentation in R/helpers.R
 \name{get_fear_greed}
 \alias{get_fear_greed}
-\title{Fetch Fear & Greed Index using cryptoQuotes}
+\title{Fetch Fear & Greed Index}
 \usage{
 get_fear_greed(days = 30)
 }
@@ -16,9 +16,33 @@ A list containing:
     \item \code{current_classification}: Text classification
     \item \code{timestamp}: When the data was fetched
     \item \code{history}: xts object with historical values
+    \item \code{source}: Data source attribution
   }
 }
 \description{
 Retrieves the Crypto Fear & Greed Index from alternative.me via the cryptoQuotes package.
-The index ranges from 0 (Extreme Fear) to 100 (Extreme Greed).
+The index ranges from 0 (Extreme Fear) to 100 (Extreme Greed), providing a contrarian
+sentiment indicator for cryptocurrency markets.
+}
+\details{
+Classification thresholds:
+\itemize{
+  \item \strong{0-25}: Extreme Fear (potential buying opportunity)
+  \item \strong{25-45}: Fear
+  \item \strong{45-55}: Neutral
+  \item \strong{55-75}: Greed
+  \item \strong{75-100}: Extreme Greed (potential selling opportunity)
+}
+
+The index is a contrarian indicator - extreme fear often precedes market bottoms,
+while extreme greed often precedes market tops.
+}
+\examples{
+\dontrun{
+fgi <- get_fear_greed()
+}
+
+}
+\seealso{
+\code{\link{get_google_trends}} for retail search sentiment
 }

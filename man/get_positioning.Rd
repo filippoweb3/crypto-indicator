@@ -16,38 +16,17 @@ get_positioning(
 
 \item{include_flows}{Logical. Whether to fetch transaction flow data (slower). Default TRUE.}
 
-\item{top_n_vaults}{Integer. Number of top vaults to analyze for depositors/flows. Default 10.}
+\item{top_n_vaults}{Integer. Number of top vaults to analyze for depositors/flows. Default 5.}
 
-\item{max_depositors_per_vault}{Integer. Maximum depositors to fetch per vault. Default 20.}
+\item{max_depositors_per_vault}{Integer. Maximum depositors to fetch per vault. Default 10.}
 }
 \value{
 A list object of class \code{positioning_data} containing:
-
-  \strong{Exchange Positioning:}
-  \itemize{
-    \item \code{netflow_summary}: Data frame with:
-      \itemize{
-        \item \code{inflow_usd}: Total USD value of deposits into vaults
-        \item \code{outflow_usd}: Total USD value of withdrawals from vaults
-        \item \code{tx_count}: Total number of transactions
-        \item \code{pct}: Top 5 depositors share percentage (concentration)
-        \item \code{netflow_usd}: Net flow (inflow - outflow)
-      }
-    \item \code{flow_regime}: Categorical interpretation of vault flows
-    \item \code{top_exchange_target}: Largest BTC-exposed vault
-  }
-
-  \strong{Whale Activity Metrics:}
-  \itemize{
-    \item \code{total_tx}: Number of unique whale wallets identified
-    \item \code{whale_signal}: Activity level interpretation based on vault sizes
-    \item \code{largest_move_usd}: Size of the largest BTC-exposed vault
-  }
-
-  \strong{Raw Data:}
-  \itemize{
-    \item \code{raw_positioning_data}: Complete Morpho data from \code{\link{get_morpho_positioning}}
-    \item \code{data_source}: Always "Morpho Vaults"
+  \describe{
+    \item{exchange_positioning}{Flow summary and regime classification}
+    \item{whale_activity}{Whale wallet counts and activity signals}
+    \item{raw_positioning_data}{Complete Morpho data from \code{\link{get_morpho_positioning}}}
+    \item{data_source}{Always "Morpho Vaults"}
   }
 }
 \description{
@@ -56,55 +35,27 @@ Bitcoin exposure through DeFi lending markets. This provides insights into
 "smart money" positioning, whale concentration, and capital flows.
 }
 \details{
-\strong{Why Morpho Vaults Matter for Positioning}
-
 Morpho vaults reveal actual capital deployment in DeFi lending markets:
 \itemize{
   \item \strong{Vault Inflows}: BTC entering productive use (bullish signal)
-  \item \strong{Vault Outflows}: BTC returning to cold storage (neutral/bearish)
-  \item \strong{Whale Concentration}: Identifies systemic risk through HHI and top depositor share
-  \item \strong{Vault Composition}: Shows whether exposure is through direct deposits or collateralized lending
+  \item \strong{Vault Outflows}: BTC returning to cold storage (bearish signal)
+  \item \strong{Whale Concentration}: Identifies systemic risk through HHI
+  \item \strong{Vault Composition}: Direct deposits vs collateralized lending
 }
-
-This provides a more sophisticated view of "smart money" positioning than
-simple exchange flow tracking, revealing not just movement but actual
-economic activity and concentration risk.
 }
 \note{
 \itemize{
-  \item No API key required - all data is from public Morpho endpoints
+  \item No API key required - data from public Morpho endpoints
   \item Rate limits may apply for intensive queries
 }
 }
 \examples{
 \dontrun{
-# Basic usage - get current positioning
 positioning <- get_positioning()
-
-# View summary
-print(positioning)
-
-# Access specific components
-positioning$exchange_positioning$flow_regime
-positioning$whale_activity$whale_signal
-positioning$raw_positioning_data$whale_concentration
-
-# Check whale concentration
-if (!is.null(positioning$raw_positioning_data$whale_concentration)) {
-  cat("Market concentration:",
-      positioning$raw_positioning_data$whale_concentration$hhi_interpretation)
-}
 }
 
 }
 \seealso{
-\itemize{
-  \item \code{\link{get_morpho_positioning}} for detailed Morpho data
-  \item \code{\link{get_derivatives}} for derivatives market positioning
-  \item \code{\link{get_onchain_indicators}} for fundamental valuation
-  \item \code{\link{get_google_trends}} for retail sentiment data
-}
-}
-\author{
-Filippo Franchini
+\code{\link{get_morpho_positioning}} for detailed Morpho data
+\code{\link{get_derivatives}} for derivatives market positioning
 }

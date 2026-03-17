@@ -7,10 +7,14 @@
 \method{print}{positioning_data}(x, ...)
 }
 \arguments{
-\item{x}{positioning_data object}
+\item{x}{An object of class \code{positioning_data}}
 
-\item{...}{Additional arguments}
+\item{...}{Additional arguments (ignored)}
+}
+\value{
+Invisibly returns the input object
 }
 \description{
-Print method for positioning_data
+Custom print method for positioning_data objects, providing a formatted
+summary of positioning data including flow regime, net flows, and whale activity.
 }

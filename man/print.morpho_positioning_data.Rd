@@ -7,10 +7,14 @@
 \method{print}{morpho_positioning_data}(x, ...)
 }
 \arguments{
-\item{x}{morpho_positioning_data object}
+\item{x}{An object of class \code{morpho_positioning_data}}
 
-\item{...}{Additional arguments}
+\item{...}{Additional arguments (ignored)}
+}
+\value{
+Invisibly returns the input object
 }
 \description{
-Print method for morpho_positioning_data
+Custom print method for morpho_positioning_data objects, providing a formatted
+summary of Morpho vault positioning including exposure, flows, and whale concentration.
 }

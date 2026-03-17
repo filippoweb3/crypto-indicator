@@ -24,12 +24,23 @@ get_vault_v1_list(
 
 \item{order_direction}{Character. "Asc" or "Desc" (default: "Desc")}
 
-\item{human_readable}{Logical. Add formatted columns (default: TRUE)}
+\item{human_readable}{Logical. Add formatted columns for display purposes (default: TRUE)}
 }
 \value{
-A tibble with basic vault information including TVL and correct share prices
+A tibble containing vault information including:
+  \itemize{
+    \item \code{vault_address}: Ethereum address of the vault
+    \item \code{name}: Vault name
+    \item \code{symbol}: Vault symbol
+    \item \code{asset_symbol}: Underlying asset symbol
+    \item \code{total_assets_usd}: Total Value Locked (TVL) in USD
+    \item \code{total_supply_human}: Total share supply
+    \item \code{share_price_usd}: Current share price in USD
+    \item \code{liquidity_usd}: Available liquidity in USD
+    \item Additional metadata including chain information and curator details
+  }
 }
 \description{
 Retrieves a paginated list of all Morpho Vault V1s (MetaMorpho) with basic information.
-These vaults typically have the highest TVL (billions of dollars).
+These vaults typically have the highest TVL among Morpho markets, often reaching billions of dollars.
 }

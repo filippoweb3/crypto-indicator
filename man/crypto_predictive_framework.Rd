@@ -15,30 +15,91 @@ crypto_predictive_framework(
 \arguments{
 \item{assets}{Character vector of cryptocurrency names to analyze.
 Default \code{c("Bitcoin")}. Currently optimized for Bitcoin, but extensible
-to other assets that have sufficient data.}
+to other assets with sufficient data.}
 
 \item{start_date}{Start date for historical data in "YYYY-MM-DD" format.
 Default \code{"2015-01-01"} provides a full market cycle of data.}
 
 \item{fred_api_key}{Character string containing your FRED API key.
-Default \code{NULL}. If provided, will be stored in global environment.
-Register at \url{https://fred.stlouisfed.org/docs/api/api_key.html}}
+Default \code{NULL}. Register at \url{https://fred.stlouisfed.org/docs/api/api_key.html}}
 
 \item{risk_override}{Logical. If TRUE, risk-off signals override conflicting
 time horizon signals. Default \code{TRUE}.}
 
 \item{verbose}{Logical. Print detailed progress messages. Default \code{TRUE}.}
-
-\item{derivatives_lookback_days}{Integer. Number of days of derivatives data to fetch
-for percentile calculations. Default \code{90} (increased from 27 for statistical validity).}
 }
 \value{
-A list object of class \code{crypto_framework} containing seven
-  main sections as documented in the package.
+A list object of class \code{crypto_framework} containing seven main sections:
+  \describe{
+    \item{metadata}{Run information including timestamp, status, warnings}
+    \item{raw_data}{Original data from each source (market, derivatives, macro, positioning, sentiment)}
+    \item{indicators}{Calculated indicators (on-chain metrics, volatility regimes)}
+    \item{signals}{Latest signals from each module with interpretations}
+    \item{decisions}{Framework outputs by time horizon with position sizing}
+    \item{summary}{Condensed actionable summary with bullet points}
+  }
 }
 \description{
 The flagship function of the CryptoIndicator package. This framework integrates
 on-chain, derivatives, macro, volatility, and positioning indicators into a
 coherent decision system that generates actionable signals across multiple
 time horizons (short-term, medium-term, long-term).
+
+The framework employs a hierarchical decision structure where risk assessment
+overrides opportunistic signals when market conditions become dangerous,
+ensuring capital preservation remains the primary objective.
+}
+\details{
+\strong{Multi-Timeframe Decision Framework}
+
+The framework generates signals across three distinct time horizons:
+\itemize{
+  \item \strong{Short-term (hours to days)}: Combines derivatives positioning with recent price momentum
+  \item \strong{Medium-term (weeks to months)}: Synthesizes on-chain valuation, macro conditions, and whale flows
+  \item \strong{Long-term (months to years)}: Based on cycle analysis and halving schedules
+}
+
+\strong{Risk-Off Override}
+
+The risk-off signal acts as a circuit breaker, taking precedence over all
+other signals when market conditions become dangerous. Risk factors include:
+\itemize{
+  \item Extreme volatility (panic conditions)
+  \item Severe macro headwinds
+  \item Critical whale concentration (systemic risk)
+  \item Extreme sentiment readings
+}
+
+When risk is HIGH (RED), the framework:
+\itemize{
+  \item Disables short-term trading signals
+  \item Reduces medium-term allocation to 15%
+  \item Shifts long-term strategy to defensive accumulation
+}
+}
+\note{
+\itemize{
+  \item The framework is optimized for Bitcoin but can analyze other assets
+  \item FRED API key is optional; without it, macro data will be unavailable
+  \item Internet connection required for all data sources
+  \item Some indicators (e.g., Puell Multiple) are Bitcoin-specific
+}
+}
+\examples{
+\dontrun{
+# Basic usage
+result <- crypto_predictive_framework()
+
+# With FRED API key
+result <- crypto_predictive_framework(
+  assets = "Bitcoin",
+  start_date = "2015-01-01",
+  fred_api_key = "your_fred_key"
+)
+}
+
+}
+\seealso{
+\code{\link{print_crypto_summary}} for formatted output
+\code{\link{get_market_data}} for raw data acquisition
 }

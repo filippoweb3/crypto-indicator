@@ -15,37 +15,21 @@
 #'
 #' @return A list object of class \code{market_data} containing:
 #'   \describe{
-#'     \item{data}{A data frame with the following columns:
-#'       \itemize{
-#'         \item \code{timestamp}: Date of the observation
-#'         \item \code{slug}: Asset identifier (e.g., "bitcoin")
-#'         \item \code{symbol}: Trading symbol (e.g., "BTC")
-#'         \item \code{name}: Full asset name (e.g., "Bitcoin")
-#'         \item \code{open}, \code{high}, \code{low}, \code{close}: OHLC prices in USD
-#'         \item \code{volume}: Trading volume in USD
-#'         \item \code{market_cap}: Market capitalization in USD
-#'       }
-#'     }
-#'     \item{assets}{Character vector of requested asset names (echoed input)}
-#'     \item{start_date}{Requested start date (echoed input)}
+#'     \item{data}{A data frame with OHLCV and market cap data}
+#'     \item{assets}{Character vector of requested asset names}
+#'     \item{start_date}{Requested start date}
 #'     \item{last_update}{System date when data was fetched}
 #'   }
 #'
 #' @details
 #' The function uses \code{crypto2::crypto_history()} which sources data from
-#' CoinMarketCap's historical API. Key characteristics:
-#' \itemize{
-#'   \item Data frequency: Daily
-#'   \item Price currency: USD
-#'   \item Coverage: From 2013 for major assets, later for smaller assets
-#'   \item Rate limiting: Respects API rate limits (use responsibly)
-#' }
+#' CoinMarketCap's historical API. Data is returned at daily frequency in USD.
+#' Coverage begins from 2013 for major assets, with later start dates for smaller assets.
 #'
 #' @note
 #' \itemize{
 #'   \item Internet connection required
-#'   \item First call may be slow as it caches coin list
-#'   \item Some assets may have limited historical data before their listing date
+#'   \item First call may be slow due to coin list caching
 #'   \item Market capitalization is as reported by CoinMarketCap
 #' }
 #'
@@ -59,49 +43,30 @@
 #'   assets = c("Bitcoin", "Ethereum"),
 #'   start_date = "2018-01-01"
 #' )
-#'
-#' # Access the data
-#' head(multi_asset$data)
-#'
-#' # Check metadata
-#' cat("Assets:", paste(multi_asset$assets, collapse = ", "), "\n")
-#' cat("Last updated:", multi_asset$last_update)
 #' }
 #'
 #' @seealso
-#' \itemize{
-#'   \item \code{\link{get_onchain_indicators}} for deriving on-chain metrics from this data
-#'   \item \code{\link{get_volatility}} for volatility calculations
-#'   \item \code{crypto2::crypto_history()} for underlying API details
-#' }
+#' \code{\link{get_onchain_indicators}} for deriving on-chain metrics
+#' \code{\link{get_volatility}} for volatility calculations
 #'
-#' @references
-#' CoinMarketCap API Documentation: \url{https://coinmarketcap.com/api/}
+#' @references CoinMarketCap API Documentation: \url{https://coinmarketcap.com/api/}
 #'
-#' @author Filippo Franchini
 #' @export
-#'
-#' @importFrom dplyr filter
-#' @importFrom crypto2 crypto_list crypto_history
 get_market_data <- function(assets = c("Bitcoin"), start_date = "2015-01-01"){
 
   coin_list <- crypto2::crypto_list() %>% dplyr::filter(name %in% assets)
-
   data <- crypto2::crypto_history(coin_list = coin_list, start_date = start_date)
 
-  # Add market_cap if missing (approximate)
   if (!"market_cap" %in% names(data)) {
-    data$market_cap <- data$close * 19991700  # Approximate BTC supply (as per 20.02.2026)
+    data$market_cap <- data$close * 19991700
   }
 
-  return(
-    list(data = data,
-         assets = assets,
-         start_date = start_date,
-         last_update = Sys.Date()
-         )
-    )
-
+  return(list(
+    data = data,
+    assets = assets,
+    start_date = start_date,
+    last_update = Sys.Date()
+  ))
 }
 
 
@@ -113,8 +78,7 @@ get_market_data <- function(assets = c("Bitcoin"), start_date = "2015-01-01"){
 #' monetary policy where block rewards are cut in half approximately every four years.
 #'
 #' @param target_date A date object or character string in "YYYY-MM-DD" format for which
-#'   to calculate the daily issuance. The function determines which halving regime was
-#'   active on this date.
+#'   to calculate the daily issuance.
 #'
 #' @return A numeric value representing the estimated number of new Bitcoins mined per day
 #'   on the target date. Returns 0 for dates before the first block (2009-01-03).
@@ -122,64 +86,35 @@ get_market_data <- function(assets = c("Bitcoin"), start_date = "2015-01-01"){
 #' @details
 #' Bitcoin's issuance follows a strict, predetermined schedule:
 #' \itemize{
-#'   \item \strong{2009-01-03 to 2012-11-27}: 50 BTC per block × 144 blocks/day = 7,200 BTC/day
-#'   \item \strong{2012-11-28 to 2016-07-08}: 25 BTC per block × 144 blocks/day = 3,600 BTC/day
-#'   \item \strong{2016-07-09 to 2020-05-10}: 12.5 BTC per block × 144 blocks/day = 1,800 BTC/day
-#'   \item \strong{2020-05-11 to 2024-04-19}: 6.25 BTC per block × 144 blocks/day = 900 BTC/day
-#'   \item \strong{2024-04-20 to present}: 3.125 BTC per block × 144 blocks/day = 450 BTC/day
+#'   \item \strong{2009-01-03 to 2012-11-27}: 50 BTC/block × 144 blocks/day = 7,200 BTC/day
+#'   \item \strong{2012-11-28 to 2016-07-08}: 25 BTC/block × 144 blocks/day = 3,600 BTC/day
+#'   \item \strong{2016-07-09 to 2020-05-10}: 12.5 BTC/block × 144 blocks/day = 1,800 BTC/day
+#'   \item \strong{2020-05-11 to 2024-04-19}: 6.25 BTC/block × 144 blocks/day = 900 BTC/day
+#'   \item \strong{2024-04-20 to present}: 3.125 BTC/block × 144 blocks/day = 450 BTC/day
 #' }
 #'
-#' The calculation assumes:
-#' \itemize{
-#'   \item Consistent 10-minute block intervals (144 blocks per day)
-#'   \item No variance due to difficulty adjustments or hashrate changes
-#'   \item Perfect adherence to halving schedule (which Bitcoin's protocol enforces)
-#' }
-#'
-#' @note
-#' This is a theoretical maximum based on ideal block timing. Actual daily issuance
-#' may vary slightly due to:
-#' \itemize{
-#'   \item Block time variance (not exactly 10 minutes)
-#'   \item Occasional orphaned blocks
-#'   \item Difficulty adjustment periods
-#' }
-#' However, over longer periods, the average converges to this theoretical value.
+#' The calculation assumes consistent 10-minute block intervals (144 blocks per day).
+#' Actual daily issuance may vary slightly due to block time variance, orphaned blocks,
+#' and difficulty adjustments, but averages converge to this theoretical value over time.
 #'
 #' @examples
 #' \dontrun{
-#' # Calculate issuance during different eras
-#' get_btc_issuance("2011-01-01")  # First era: 7,200 BTC/day
-#' get_btc_issuance("2014-01-01")  # Second era: 3,600 BTC/day
-#' get_btc_issuance("2018-01-01")  # Third era: 1,800 BTC/day
-#' get_btc_issuance("2022-01-01")  # Fourth era: 900 BTC/day
-#' get_btc_issuance(Sys.Date())     # Current era: 450 BTC/day
-#'
-#' # Use in data pipeline
-#' dates <- as.Date(c("2020-01-01", "2021-01-01", "2022-01-01"))
-#' sapply(dates, get_btc_issuance)
+#' get_btc_issuance("2011-01-01")  # 7,200 BTC/day
+#' get_btc_issuance("2022-01-01")  # 900 BTC/day
+#' get_btc_issuance(Sys.Date())    # 450 BTC/day
 #' }
 #'
-#' @seealso
-#' \itemize{
-#'   \item \code{\link{get_onchain_indicators}} which uses this to calculate Puell Multiple
-#'   \item \code{\link{get_btc_issuance_usd}} for USD value of issuance (if implemented)
-#'   \item Bitcoin whitepaper: \url{https://bitcoin.org/bitcoin.pdf}
-#' }
+#' @seealso \code{\link{get_onchain_indicators}} which uses this to calculate Puell Multiple
 #'
 #' @references
 #' \itemize{
-#'   \item Nakamoto, S. (2008). Bitcoin: A Peer-to-Peer Electronic Cash System.
+#'   \item Nakamoto, S. (2008). Bitcoin: A Peer-to-Peer Electronic Cash System
 #'   \item Bitcoin Block Halving Schedule: \url{https://www.bitcoinblockhalf.com}
 #' }
 #'
-#' @author Filippo Franchini
 #' @export
-#'
-#' @importFrom dplyr filter slice_tail pull
 get_btc_issuance <- function(target_date) {
 
-  # Convert to Date if character
   if (is.character(target_date)) {
     target_date <- as.Date(target_date)
   }
@@ -189,7 +124,6 @@ get_btc_issuance <- function(target_date) {
     reward = c(50, 25, 12.5, 6.25, 3.125)
   )
 
-  # Handle dates before first halving
   if (target_date < min(halvings$date)) {
     return(0)
   }
@@ -200,7 +134,6 @@ get_btc_issuance <- function(target_date) {
     pull(reward)
 
   return(current_reward * 144)
-
 }
 
 
@@ -213,79 +146,51 @@ get_btc_issuance <- function(target_date) {
 #' insights into market cycles and potential turning points.
 #'
 #' @param data A data frame containing cryptocurrency market data, typically the
-#'   output from \code{\link{get_market_data()}} or similar structure. Must contain
-#'   columns: \code{timestamp}, \code{slug}, \code{close}, \code{volume}, and
-#'   \code{market_cap}.
+#'   output from \code{\link{get_market_data()}}. Must contain columns:
+#'   \code{timestamp}, \code{slug}, \code{close}, \code{volume}, and \code{market_cap}.
 #'
-#' @return The input data frame augmented with the following calculated columns:
-#'
-#'   \strong{Basic Metrics:}
-#'   \itemize{
-#'     \item \code{returns}: Simple daily returns (close / lag(close) - 1)
-#'     \item \code{log_returns}: Log-normal returns for volatility calculations
-#'     \item \code{volume_ma_7}: 7-day simple moving average of volume
-#'     \item \code{price_ma_50}: 50-day simple moving average of price
-#'     \item \code{price_ma_200}: 200-day simple moving average of price
-#'   }
-#'
-#'   \strong{On-Chain Valuation Metrics:}
-#'   \itemize{
-#'     \item \code{nvt}: Network Value to Transactions ratio (market_cap / volume)
-#'     \item \code{nvts}: Smoothed NVT using 14-day SMA of volume
-#'     \item \code{realized_price}: 200-day SMA price (proxy for average acquisition cost)
-#'     \item \code{mvrv}: Market Value to Realized Value ratio (close / realized_price)
-#'   }
-#'
-#'   \strong{Miner-Related Metrics:}
-#'   \itemize{
-#'     \item \code{issuance}: Daily Bitcoin issuance based on halving schedule
-#'     \item \code{issuance_usd}: USD value of daily issuance
-#'     \item \code{puell_multiple}: Issuance USD / 365-day MA of issuance USD
-#'   }
-#'
-#'   \strong{Signal Regimes:}
-#'   \itemize{
-#'     \item \code{nvt_regime}: Categorical interpretation of NVT
-#'     \item \code{mvrv_regime}: Cycle positioning based on MVRV
-#'     \item \code{puell_signal}: Miner behavior interpretation
-#'     \item \code{regime_combi}: Composite signal combining MVRV and Puell
+#' @return The input data frame augmented with calculated columns:
+#'   \describe{
+#'     \item{\code{returns, log_returns}}{Daily return metrics}
+#'     \item{\code{volume_ma_7, price_ma_50, price_ma_200}}{Moving averages}
+#'     \item{\code{nvt, nvts}}{Network Value to Transactions ratios}
+#'     \item{\code{realized_price, mvrv}}{Realized price and MVRV ratio}
+#'     \item{\code{issuance, issuance_usd, puell_multiple}}{Miner-related metrics}
+#'     \item{\code{nvt_regime, mvrv_regime, puell_signal, regime_combi}}{Signal regimes}
 #'   }
 #'
 #' @details
 #' \strong{MVRV Ratio (Market Value to Realized Value)}
 #'
-#' MVRV compares current market price to the average price at which coins were
-#' last moved (realized price). Using 200-day SMA as a proxy for realized price:
+#' Compares current market price to average acquisition cost (approximated using 200-day SMA):
 #' \itemize{
-#'   \item \strong{< 0.7}: "Extreme Bottom" - Market significantly below average acquisition cost
-#'   \item \strong{0.7 - 0.9}: "Bear Market" - Trading below cost basis
-#'   \item \strong{0.9 - 1.75}: "Bull Market" - Healthy premium to cost basis
-#'   \item \strong{> 1.75}: "Extreme Top" - Excessive unrealized profits
+#'   \item \strong{< 0.7}: Extreme Bottom - Market significantly below cost basis
+#'   \item \strong{0.7 - 0.9}: Bear Market - Trading below cost basis
+#'   \item \strong{0.9 - 1.75}: Bull Market - Healthy premium to cost basis
+#'   \item \strong{> 1.75}: Extreme Top - Excessive unrealized profits
 #' }
 #'
 #' \strong{NVT Ratio (Network Value to Transactions)}
 #'
-#' Analogous to the P/E ratio in equities, NVT measures whether the network's
-#' valuation is supported by its transaction volume:
+#' Analogous to P/E ratio in equities:
 #' \itemize{
-#'   \item \strong{< 30}: "Undervalued" - Network usage high relative to value
-#'   \item \strong{30 - 70}: "Neutral" - Balanced valuation
-#'   \item \strong{> 70}: "Overvalued" - Value exceeds network usage
+#'   \item \strong{< 30}: Undervalued - Network usage high relative to value
+#'   \item \strong{30 - 70}: Neutral - Balanced valuation
+#'   \item \strong{> 70}: Overvalued - Value exceeds network usage
 #' }
 #'
 #' \strong{Puell Multiple}
 #'
-#' Measures miner revenue relative to the yearly moving average, identifying
-#' periods of miner capitulation or exceptional profitability:
+#' Measures miner revenue relative to 365-day moving average:
 #' \itemize{
-#'   \item \strong{< 0.7}: "Miner Capitulation" - Miners selling at a loss
-#'   \item \strong{0.7 - 2.0}: "Neutral" - Normal miner profitability
-#'   \item \strong{> 2.0}: "Miner Selling Pressure" - Miners exceptionally profitable
+#'   \item \strong{< 0.7}: Miner Capitulation - Miners selling at a loss
+#'   \item \strong{0.7 - 2.0}: Neutral - Normal miner profitability
+#'   \item \strong{> 2.0}: Miner Selling Pressure - Miners exceptionally profitable
 #' }
 #'
 #' \strong{Composite Signal}
 #'
-#' Combines MVRV and Puell for stronger conviction signals:
+#' Combines MVRV and Puell for higher conviction:
 #' \itemize{
 #'   \item \strong{Strong Buy}: MVRV Extreme Bottom + Puell Miner Capitulation
 #'   \item \strong{Strong Sell}: MVRV Extreme Top + Puell Miner Selling Pressure
@@ -294,60 +199,29 @@ get_btc_issuance <- function(target_date) {
 #'
 #' @note
 #' \itemize{
-#'   \item Realized price is approximated using 200-day SMA. True realized price
-#'     requires UTXO-level data and would be more accurate but computationally intensive.
-#'   \item Puell Multiple is Bitcoin-specific due to its dependence on issuance schedule.
-#'   \item First 200 days of data will have NA values for moving averages.
-#'   \item Regime thresholds are based on historical analysis and may require
-#'     adjustment as market dynamics evolve.
+#'   \item Realized price is approximated using 200-day SMA; true realized price requires UTXO data
+#'   \item Puell Multiple is Bitcoin-specific
+#'   \item First 200 days will have NA values for moving averages
 #' }
 #'
 #' @examples
 #' \dontrun{
-#' # Get market data first
 #' market_data <- get_market_data("Bitcoin", "2015-01-01")
-#'
-#' # Calculate on-chain indicators
 #' onchain_data <- get_onchain_indicators(market_data$data)
-#'
-#' # View latest signals
-#' latest <- onchain_data %>%
-#'   dplyr::slice_tail(n = 1) %>%
-#'   dplyr::select(timestamp, mvrv_regime, puell_signal, regime_combi)
-#' print(latest)
-#'
-#' # Plot MVRV history with regime thresholds
-#' library(ggplot2)
-#' onchain_data %>%
-#'   tail(365) %>%
-#'   ggplot(aes(x = timestamp, y = mvrv)) +
-#'   geom_line() +
-#'   geom_hline(yintercept = c(0.7, 0.9, 1.75), linetype = "dashed", color = "red") +
-#'   labs(title = "MVRV Ratio with Regime Thresholds")
 #' }
 #'
 #' @seealso
-#' \itemize{
-#'   \item \code{\link{get_market_data}} for input data acquisition
-#'   \item \code{\link{get_btc_issuance}} for issuance calculation details
-#'   \item \code{\link{get_volatility}} for volatility metrics on returns
-#'   \item Woo, W. (2019). "On-Chain Indicators for Bitcoin Valuation"
-#' }
+#' \code{\link{get_market_data}} for input data
+#' \code{\link{get_btc_issuance}} for issuance calculation
 #'
 #' @references
 #' \itemize{
-#'   \item MVRV: Murad Mahmudov & Adam Taché (2019). "Bitcoin's Realized Value"
-#'   \item NVT: Willy Woo (2017). "Introducing NVT Ratio (Network Value to Transactions Ratio)"
-#'   \item Puell Multiple: David Puell (2019). "The Puell Multiple: A Bitcoin Mining Indicator"
-#'   \item Checkmate (2020). "The Bitcoin On-Chain Market Cycle Guide"
+#'   \item MVRV: Murad Mahmudov & Adam Taché (2019)
+#'   \item NVT: Willy Woo (2017)
+#'   \item Puell Multiple: David Puell (2019)
 #' }
 #'
-#' @author Filippo Franchini
 #' @export
-#'
-#' @importFrom dplyr group_by arrange mutate case_when
-#' @importFrom zoo rollmean
-#' @importFrom TTR SMA
 get_onchain_indicators <- function(data){
 
   data <- dplyr::group_by(data, slug) %>%
@@ -360,13 +234,12 @@ get_onchain_indicators <- function(data){
       price_ma_200 = zoo::rollmean(close, 200, fill = NA, align = "right"),
       nvt = market_cap / volume,
       nvts = market_cap / TTR::SMA(volume, n = 14),
-      realized_price = TTR::SMA(close, n = 200), # proxy use 200 MA, normally would use UTXO data
+      realized_price = TTR::SMA(close, n = 200),
       mvrv = close / realized_price,
       issuance = sapply(timestamp, function(x) get_btc_issuance(x)),
-      issuance_usd = issuance*close,
-      puell_multiple = issuance_usd/zoo::rollmean(issuance_usd, k = 365, fill = NA, align = "right"),
+      issuance_usd = issuance * close,
+      puell_multiple = issuance_usd / zoo::rollmean(issuance_usd, k = 365, fill = NA, align = "right"),
 
-      # Signals
       nvt_regime = dplyr::case_when(
         nvt > 70 ~ "Overvalued",
         nvt < 30 ~ "Undervalued",
@@ -386,12 +259,12 @@ get_onchain_indicators <- function(data){
       regime_combi = case_when(
         mvrv_regime == "Extreme Bottom" & puell_signal == "Miner Capitulation" ~ "Strong Buy",
         mvrv_regime == "Extreme Top" & puell_signal == "Miner Selling Pressure" ~ "Strong Sell",
-        TRUE ~ "Neutral")
-      ) %>%
+        TRUE ~ "Neutral"
+      )
+    ) %>%
     dplyr::ungroup()
 
   return(data)
-
 }
 
 
@@ -407,198 +280,53 @@ get_onchain_indicators <- function(data){
 #'   Format should follow Binance convention (e.g., "BTCUSDT", "ETHUSDT").
 #'
 #' @return A list object of class \code{derivatives_data} containing:
-#'
-#'   \strong{Data Frame:}
-#'   \itemize{
-#'     \item \code{data}: Merged time series with columns:
-#'       \itemize{
-#'         \item \code{date}: Date of observation
-#'         \item \code{open_interest}: Total number of outstanding contracts (in USD)
-#'         \item \code{avg_funding_rate}: Mean funding rate for the day (as decimal)
-#'         \item \code{max_funding_rate}: Maximum funding rate for the day
-#'         \item \code{long}: Number of long positions
-#'         \item \code{short}: Number of short positions
-#'         \item \code{ls_ratio}: Long/short ratio (long/short)
-#'       }
-#'   }
-#'
-#'   \strong{Percentiles:}
-#'   \itemize{
-#'     \item \code{oi_percentile}: Percentile rank of current open interest (0-1)
-#'     \item \code{funding_percentile}: Percentile rank of current funding rate (0-1)
-#'   }
-#'
-#'   \strong{Signals:} List of derived trading signals
-#'   \itemize{
-#'     \item \code{crowded_long}: Logical vector - TRUE when OI >90th %ile AND funding >90th %ile
-#'     \item \code{crowded_short}: Logical vector - TRUE when OI <10th %ile AND funding <10th %ile
-#'     \item \code{oi_momentum}: 7-day percentage change in open interest
-#'     \item \code{funding_regime}: Categorical regime based on funding rate:
-#'       \itemize{
-#'         \item \strong{Extreme Long}: Funding > 0.05% (annualized >18%)
-#'         \item \strong{Bullish}: Funding 0.01% to 0.05%
-#'         \item \strong{Neutral}: Funding 0.00% to 0.01%
-#'         \item \strong{Bearish}: Funding -0.01% to 0.00%
-#'         \item \strong{Extreme Short}: Funding < -0.01%
-#'       }
+#'   \describe{
+#'     \item{data}{Data frame with date, open interest, funding rates, and L/S ratio}
+#'     \item{oi_percentile}{Percentile rank of current open interest (0-1)}
+#'     \item{funding_percentile}{Percentile rank of current funding rate (0-1)}
+#'     \item{signals}{List of derived trading signals including crowded trades and funding regime}
 #'   }
 #'
 #' @details
-#' The \code{get_derivatives()} function retrieves and analyzes three core derivatives
-#' market metrics from Binance, providing critical insights into market positioning,
-#' leverage dynamics, and potential reversal points.
-#'
-#' \strong{Open Interest}
-#'
-#' Open interest represents the total number of outstanding derivative contracts
-#' that have not been settled. It measures the flow of money into the derivatives
-#' market and provides context on trend strength and potential exhaustion:
+#' The function analyzes three core derivatives metrics:
 #' \itemize{
-#'   \item \strong{Rising OI + Rising Price:} New long money entering (trend confirmation)
-#'   \item \strong{Rising OI + Falling Price:} New short money entering (distribution/short buildup)
-#'   \item \strong{Falling OI + Any Price:} Position unwinding (trend exhaustion)
-#'   \item \strong{OI > 90th percentile:} Market may be overextended
+#'   \item \strong{Open Interest}: Total outstanding contracts, indicating money flow
+#'   \item \strong{Funding Rates}: Periodic payments between longs and shorts, revealing sentiment
+#'   \item \strong{Long/Short Ratio}: Relative positioning of market participants
 #' }
 #'
-#' \strong{Funding Rates}
-#'
-#' Perpetual swaps use funding rates to keep contract prices anchored to spot prices.
-#' These periodic payments (every 8 hours on Binance) reveal the dominant market
-#' sentiment and cost of maintaining leveraged positions:
+#' Crowded trade detection combines OI and funding percentiles:
 #' \itemize{
-#'   \item \strong{Positive funding:} Longs pay shorts (bullish sentiment)
-#'   \item \strong{Negative funding:} Shorts pay longs (bearish sentiment)
-#'   \item \strong{Extreme positive (> 0.05\%):} Market overly levered long, liquidation cascade risk
-#'   \item \strong{Extreme negative (< -0.01\%):} Excessive short positioning, short squeeze risk
-#' }
-#'
-#' The function calculates daily average and maximum funding rates, then classifies
-#' the market regime based on the magnitude of the average rate.
-#'
-#' \strong{Long/Short Ratio}
-#'
-#' The ratio of long to short positions provides direct insight into market
-#' positioning and potential contrarian opportunities:
-#' \itemize{
-#'   \item \strong{High ratio (> 1.2):} More longs than shorts (bullish positioning)
-#'   \item \strong{Low ratio (< 0.8):} More shorts than longs (bearish positioning)
-#'   \item \strong{Extreme values:} Often precede reversals (contrarian signals)
-#' }
-#'
-#' \strong{Crowded Trade Detection}
-#'
-#' The function combines open interest and funding rate percentiles to identify
-#' potentially dangerous crowded positioning:
-#' \itemize{
-#'   \item \strong{Crowded Long:} OI > 90th percentile AND funding > 90th percentile
-#'   \itemize{
-#'     \item Market is excessively long with high leverage
-#'     \item Vulnerable to long liquidations on any downside move
-#'     \item Often precedes sharp reversals
-#'   }
-#'   \item \strong{Crowded Short:} OI < 10th percentile AND funding < 10th percentile
-#'   \itemize{
-#'     \item Market is excessively short with negative funding
-#'     \item Shorts paying to maintain positions
-#'     \item Primed for short squeeze
-#'   }
-#' }
-#'
-#' \strong{Interpretation Guidelines}
-#'
-#' When using these signals in your analysis:
-#' \itemize{
-#'   \item Use extreme funding rates as mean reversion signals
-#'   \item Confirm trends with rising open interest
-#'   \item Treat crowded positioning as warning signs, not immediate triggers
-#'   \item Combine with on-chain and macro indicators for higher conviction
-#'   \item Consider that different assets may have different "normal" ranges
+#'   \item \strong{Crowded Long}: OI >90th %ile AND funding >90th %ile
+#'   \item \strong{Crowded Short}: OI <10th %ile AND funding <10th %ile
 #' }
 #'
 #' @note
 #' \itemize{
-#'   \item Percentiles are calculated over the entire available history for each metric
-#'   \item First 7 days will have NA values for open interest momentum
-#'   \item Funding rates are aggregated to daily averages from 8-hour snapshots
-#'   \item Different exchanges may have different funding rate mechanisms
-#'   \item No API key is required for Binance public data
+#'   \item Percentiles calculated over available history for each metric
+#'   \item No API key required for Binance public data
+#'   \item Funding rates aggregated to daily averages from 8-hour snapshots
 #' }
 #'
 #' @examples
 #' \dontrun{
-#' # Get derivatives data for Bitcoin
 #' btc_derivatives <- get_derivatives("BTCUSDT")
-#'
-#' # View latest signals
-#' latest_idx <- length(btc_derivatives$signals$funding_regime)
-#' cat("Current funding regime:", btc_derivatives$signals$funding_regime[latest_idx], "\n")
-#' cat("OI Percentile:", round(btc_derivatives$oi_percentile[latest_idx] * 100, 1), "%\n")
-#'
-#' # Check for crowded trades
-#' if (tail(btc_derivatives$signals$crowded_long, 1)) {
-#'   cat("⚠️  Warning: Crowded long positioning detected!\n")
 #' }
 #'
-#' # Plot open interest with percentile bands
-#' library(ggplot2)
-#' btc_derivatives$data %>%
-#'   tail(90) %>%
-#'   ggplot(aes(x = date, y = open_interest)) +
-#'   geom_line() +
-#'   geom_hline(yintercept = quantile(btc_derivatives$data$open_interest, 0.9, na.rm = TRUE),
-#'              linetype = "dashed", color = "red") +
-#'   geom_hline(yintercept = quantile(btc_derivatives$data$open_interest, 0.1, na.rm = TRUE),
-#'              linetype = "dashed", color = "green") +
-#'   labs(title = "Open Interest with 10th/90th Percentile Bands")
+#' @seealso \code{\link{crypto_predictive_framework}} for integrated analysis
 #'
-#' # Get Ethereum derivatives
-#' eth_derivatives <- get_derivatives("ETHUSDT")
+#' @references Binance Exchange (2024). "Perpetual Futures Guide"
 #'
-#' # Compare funding rates across assets
-#' funding_comparison <- data.frame(
-#'   date = btc_derivatives$data$date,
-#'   BTC = btc_derivatives$data$avg_funding_rate * 100,
-#'   ETH = eth_derivatives$data$avg_funding_rate * 100
-#' )
-#' }
-#'
-#' @section Trading Applications:
-#' \itemize{
-#'   \item \strong{Mean Reversion}: Extreme funding rates (>0.05% or <-0.01%) often revert
-#'   \item \strong{Trend Confirmation}: Rising OI confirms trend strength
-#'   \item \strong{Reversal Detection}: Crowded long/short signals potential turning points
-#'   \item \strong{Risk Management}: High OI + extreme funding suggests reducing leverage
-#' }
-#'
-#' @seealso
-#' \itemize{
-#'   \item \code{\link{crypto_predictive_framework}} for integrating with broader framework
-#'   \item Binance Futures API: \url{https://binance-docs.github.io/apidocs/futures/en/}
-#'   \item \code{cryptoQuotes::get_openinterest} for underlying function details
-#' }
-#'
-#' @references
-#' \itemize{
-#'   \item Binance Exchange (2024). "Perpetual Futures Guide"
-#'   \item Hou, A. (2021). "The Informational Role of Bitcoin Futures Market"
-#'   \item Zhang, S. (2022). "Funding Rates as a Sentiment Indicator in Crypto Markets"
-#' }
-#'
-#' @author Filippo Franchini
 #' @export
-#'
-#' @importFrom dplyr full_join group_by summarise arrange lag
-#' @importFrom cryptoQuotes get_openinterest get_fundingrate get_lsratio
 get_derivatives <- function(ticker = "BTCUSDT") {
 
-  # open interest
-  oi <- cryptoQuotes::get_openinterest(ticker = ticker, source = "binance", interval = "1d", from = Sys.Date() - 27)
+  oi <- cryptoQuotes::get_openinterest(ticker = ticker, source = "binance",
+                                       interval = "1d", from = Sys.Date() - 27)
   oi <- data.frame(date = as.Date(as.POSIXct(attributes(oi)$index)),
                    open_interest = oi$open_interest)
 
-
-  # funding rate
-  funding <- cryptoQuotes::get_fundingrate(ticker = ticker, source = "binance", from = Sys.Date() - 27)
+  funding <- cryptoQuotes::get_fundingrate(ticker = ticker, source = "binance",
+                                           from = Sys.Date() - 27)
   funding <- data.frame(date = as.Date(as.POSIXct(attributes(funding)$index)),
                         funding_rate = funding$funding_rate)
 
@@ -609,8 +337,8 @@ get_derivatives <- function(ticker = "BTCUSDT") {
       .groups = "drop"
     )
 
-  # long/short ratio
-  ls_ratio <- cryptoQuotes::get_lsratio(ticker = ticker, source = "Binance", interval = "1d", from = Sys.Date() - 27)
+  ls_ratio <- cryptoQuotes::get_lsratio(ticker = ticker, source = "Binance",
+                                        interval = "1d", from = Sys.Date() - 27)
   ls_ratio <- data.frame(date = as.Date(as.POSIXct(attributes(ls_ratio)$index)),
                          long = ls_ratio$long,
                          short = ls_ratio$short,
@@ -620,7 +348,6 @@ get_derivatives <- function(ticker = "BTCUSDT") {
     dplyr::full_join(ls_ratio, by = "date") %>%
     dplyr::arrange(date)
 
-  # Check if data is empty
   if (nrow(derivatives_data) == 0) {
     warning("No derivatives data returned for ", ticker)
     return(list(data = derivatives_data,
@@ -634,22 +361,13 @@ get_derivatives <- function(ticker = "BTCUSDT") {
   funding_percentile <- rank(derivatives_data$avg_funding_rate, na.last = "keep") /
     sum(!is.na(derivatives_data$avg_funding_rate))
 
-  # Signals
-
   signals <- list(
-    # High OI with high funding suggests crowded long (potential reversal)
     crowded_long = !is.na(oi_percentile) & !is.na(funding_percentile) &
       oi_percentile > 0.9 & funding_percentile > 0.9,
-
-    # Low OI with negative funding suggests capitulation (potential bottom)
     crowded_short = !is.na(oi_percentile) & !is.na(funding_percentile) &
       oi_percentile < 0.1 & funding_percentile < 0.1,
-
-    # Open interest momentum
     oi_momentum = (derivatives_data$open_interest /
                      dplyr::lag(derivatives_data$open_interest, 7)) - 1,
-
-    # Funding rate regime
     funding_regime = dplyr::case_when(
       is.na(derivatives_data$avg_funding_rate) ~ NA_character_,
       derivatives_data$avg_funding_rate * 100 > 0.05 ~ "Extreme Long",
@@ -661,13 +379,12 @@ get_derivatives <- function(ticker = "BTCUSDT") {
     )
   )
 
-  return(list(data = derivatives_data,
-              oi_percentile = oi_percentile,
-              funding_percentile = funding_percentile,
-              signals = signals
-              )
-         )
-
+  return(list(
+    data = derivatives_data,
+    oi_percentile = oi_percentile,
+    funding_percentile = funding_percentile,
+    signals = signals
+  ))
 }
 
 
@@ -679,226 +396,54 @@ get_derivatives <- function(ticker = "BTCUSDT") {
 #' global liquidity conditions, interest rates, dollar strength, and inflation
 #' expectations into a composite risk score for crypto asset allocation.
 #'
-#' @param fred_api_key Character string containing your FRED API key. Default
-#'   looks for \code{global_variables$fred_api_key}. Get a free API key at
-#'   \url{https://fred.stlouisfed.org/docs/api/api_key.html}
+#' @param fred_api_key Character string containing your FRED API key.
+#'   Register for free at \url{https://fred.stlouisfed.org/docs/api/api_key.html}
 #' @param start_date Start date for historical data in "YYYY-MM-DD" format.
 #'   Default "2015-01-01" aligns with crypto market maturity.
 #'
 #' @return A list object of class \code{macro_data} containing:
-#'
-#'   \strong{Liquidity Conditions:}
-#'   \itemize{
-#'     \item \code{m2_us}: Raw M2 money supply data from FRED
-#'     \item \code{m2_yoy}: Year-over-year percentage change in M2
-#'     \item \code{m2_mom}: Month-over-month percentage change in M2
-#'     \item \code{liquidity_regime}: Categorical regime:
-#'       \itemize{
-#'         \item "Expanding": M2 YoY > 5% (bullish for crypto)
-#'         \item "Stable": M2 YoY between 0% and 5%
-#'         \item "Contracting": M2 YoY < 0% (bearish for crypto)
-#'       }
-#'   }
-#'
-#'   \strong{Interest Rate Environment:}
-#'   \itemize{
-#'     \item \code{treasury_10y}: 10-year Treasury yield data
-#'     \item \code{real_rates}: Real yields (nominal yield minus inflation expectations)
-#'     \item \code{rate_regime}: Categorical regime:
-#'       \itemize{
-#'         \item "Low Rates (Risk-On)": 10-year yield < 1% (bullish)
-#'         \item "Neutral": Yields between 1% and 3%
-#'         \item "High Rates (Risk-Off)": Yields > 3% (bearish)
-#'       }
-#'   }
-#'
-#'   \strong{Dollar Strength:}
-#'   \itemize{
-#'     \item \code{dxy}: US Dollar Index (DXY) data from Yahoo Finance
-#'     \item \code{dollar_regime}: Categorical regime:
-#'       \itemize{
-#'         \item "Weak Dollar (Bullish Crypto)": DXY < 90
-#'         \item "Neutral": DXY between 90 and 100
-#'         \item "Strong Dollar (Bearish Crypto)": DXY > 100
-#'       }
-#'   }
-#'
-#'   \strong{Composite Risk Score:}
-#'   \itemize{
-#'     \item \code{composite_risk_score}: Weighted average (-1 to +1 scale) of:
-#'       \itemize{
-#'         \item M2 YoY growth (+1 if >5%, -1 if <0%, else 0)
-#'         \item 10-year yield (+1 if <1%, -1 if >3%, else 0)
-#'         \item DXY (+1 if <90, -1 if >100, else 0)
-#'       }
-#'     \item Interpretation:
-#'       \itemize{
-#'         \item \strong{> 0.3}: Bullish macro environment
-#'         \item \strong{-0.3 to 0.3}: Neutral macro environment
-#'         \item \strong{< -0.3}: Bearish macro environment
-#'       }
+#'   \describe{
+#'     \item{liquidity}{M2 money supply data and growth rates}
+#'     \item{rates}{Treasury yields and real rates}
+#'     \item{dollar}{US Dollar Index data and regime classification}
+#'     \item{composite_risk_score}{Weighted average macro score (-1 to +1)}
 #'   }
 #'
 #' @details
-#' \strong{Why Macro Matters for Crypto}
-#'
-#' Cryptocurrency markets, despite their decentralized nature, have shown
-#' increasing correlation with traditional macro factors. This function captures
-#' the three most significant macro drivers:
-#'
-#' \strong{1. Global Liquidity (M2 Money Supply)}
-#'
-#' M2 represents broad money supply including cash, checking deposits, and
-#' easily convertible near-money. Crypto has historically shown strong correlation
-#' with global liquidity expansion:
+#' The function captures three significant macro drivers:
 #' \itemize{
-#'   \item \strong{Expanding M2 (>5\% YoY)}: Excess liquidity flows into risk assets,
-#'     including cryptocurrencies. This was a key driver of the 2017 and 2021 bull runs.
-#'   \item \strong{Contracting M2 (<0\% YoY)}: Liquidity drains from markets,
-#'     creating headwinds for crypto. The 2022 bear market coincided with M2 contraction.
-#'   \item \strong{Leading Indicator}: Changes in M2 often precede crypto market
-#'     moves by 2-3 months.
+#'   \item \strong{Global Liquidity (M2)}: Money supply growth (Expanding >5%, Contracting <0%)
+#'   \item \strong{Interest Rates}: 10-year Treasury yield (Low <1%, High >3%)
+#'   \item \strong{Dollar Strength}: DXY index via FRED's DTWEXBGS (Weak <110, Strong >120)
 #' }
 #'
-#' \strong{2. Interest Rates and Real Yields}
-#'
-#' The 10-year Treasury yield represents the risk-free rate of return, while
-#' real yields adjust for inflation expectations. These affect crypto through:
-#' \itemize{
-#'   \item \strong{Opportunity Cost}: Higher yields increase the opportunity cost
-#'     of holding non-yielding assets like Bitcoin.
-#'   \item \strong{Discount Rates}: Higher rates reduce the present value of
-#'     future expected cash flows for crypto assets.
-#'   \item \strong{Institution Allocation}: Real yields drive institutional
-#'     allocation decisions between asset classes.
-#' }
-#'
-#' \strong{3. US Dollar Index (DXY)}
-#'
-#' DXY measures the dollar's strength against a basket of major currencies.
-#' The inverse correlation with crypto is well-documented:
-#' \itemize{
-#'   \item \strong{Weak Dollar (<90)}: Typically coincides with global risk-on
-#'     sentiment and crypto appreciation.
-#'   \item \strong{Strong Dollar (>100)}: Often associated with risk-off sentiment,
-#'     capital flight to safety, and crypto depreciation.
-#'   \item \strong{Mechanism}: A weaker dollar makes dollar-denominated assets
-#'     cheaper for foreign investors and often reflects loose monetary policy.
-#' }
-#'
-#' \strong{Composite Risk Score Methodology}
-#'
-#' The composite score provides a single metric for macro conditions:
-#' \itemize{
-#'   \item Each component is scored as +1 (bullish), 0 (neutral), or -1 (bearish)
-#'   \item Scores are summed and divided by 3 (number of components)
-#'   \item Range: -1 (maximum bearish) to +1 (maximum bullish)
-#'   \item Example calculation for current conditions:
-#'     \itemize{
-#'       \item M2 YoY: +4.2\% → 0 (neutral)
-#'       \item 10-year yield: 4.5\% → -1 (bearish)
-#'       \item DXY: 95 → 0 (neutral)
-#'       \item Composite = (0 + -1 + 0) / 3 = -0.33 (mildly bearish)
-#'     }
-#' }
+#' The composite risk score weights each factor equally, ranging from -1 (maximum bearish)
+#' to +1 (maximum bullish). Scores above 0.3 indicate bullish macro conditions, while
+#' scores below -0.3 indicate bearish conditions.
 #'
 #' @note
 #' \itemize{
-#'   \item A FRED API key is required for M2, treasury yields, and inflation data.
-#'     Register for free at \url{https://fred.stlouisfed.org/docs/api/api_key.html}
-#'   \item DXY data is fetched from Yahoo Finance and may have different update schedules.
-#'   \item First observation for YoY calculations will be NA (requires 12 months of data).
-#'   \item The composite score weights each factor equally; advanced users may want
-#'     to implement their own weighting schemes.
-#'   \item Macro indicators are global in nature and should be used for
-#'     medium to long-term positioning rather than short-term trading.
+#'   \item FRED API key required for M2, treasury yields, and inflation data
+#'   \item DXY data sourced from FRED's Trade Weighted Dollar Index (DTWEXBGS)
+#'   \item First observation for YoY calculations requires 12 months of data
 #' }
 #'
 #' @examples
 #' \dontrun{
-#' # Basic usage with your FRED API key
-#' macro <- get_macro(fred_api_key = "your_api_key_here")
-#'
-#' # View current macro regime
-#' cat("Liquidity:", macro$liquidity$liquidity_regime, "\n")
-#' cat("Rates:", macro$rates$rate_regime, "\n")
-#' cat("Dollar:", macro$dollar$dollar_regime, "\n")
-#' cat("Composite Risk Score:", round(macro$composite_risk_score, 2), "\n")
-#'
-#' # Interpret composite score
-#' score <- macro$composite_risk_score
-#' if (score > 0.3) {
-#'   cat("Bullish macro environment - favorable for crypto\n")
-#' } else if (score < -0.3) {
-#'   cat("Bearish macro environment - headwinds for crypto\n")
-#' } else {
-#'   cat("Neutral macro environment\n")
-#' }
-#'
-#' # Plot M2 growth history
-#' library(ggplot2)
-#' m2_data <- data.frame(
-#'   date = macro$liquidity$m2_us$date,
-#'   m2_yoy = macro$liquidity$m2_yoy * 100
-#' ) %>% tidyr::drop_na()
-#'
-#' ggplot(m2_data, aes(x = date, y = m2_yoy)) +
-#'   geom_line() +
-#'   geom_hline(yintercept = c(0, 5), linetype = "dashed", color = "red") +
-#'   labs(title = "M2 Money Supply YoY Growth",
-#'        subtitle = ">5% = Expanding Liquidity, <0% = Contracting",
-#'        y = "Year-over-Year % Change")
-#'
-#' # Track macro conditions over time
-#' macro_history <- function(start_date = "2020-01-01") {
-#'   dates <- seq.Date(as.Date(start_date), Sys.Date(), by = "month")
-#'   scores <- sapply(dates, function(d) {
-#'     # Note: This is simplified - you'd need to fetch data for each date
-#'     macro <- get_macro(fred_api_key = "your_key", start_date = d - 365)
-#'     return(macro$composite_risk_score)
-#'   })
-#'   return(data.frame(date = dates, score = scores))
-#' }
-#' }
-#'
-#' @section Trading Applications:
-#' \itemize{
-#'   \item \strong{Strategic Allocation}: Use composite score for long-term
-#'     portfolio positioning (>3 month horizon)
-#'   \item \strong{Regime Filter}: Only take long positions when macro composite > -0.3
-#'   \item \strong{Hedging}: Increase hedges when rates regime is "High Rates (Risk-Off)"
-#'   \item \strong{Confluence}: Look for alignment between macro regime and on-chain signals
+#' macro <- get_macro(fred_api_key = "your_api_key")
 #' }
 #'
 #' @seealso
-#' \itemize{
-#'   \item \code{\link{get_onchain_indicators}} for fundamental crypto valuation
-#'   \item \code{\link{get_derivatives}} for market positioning signals
-#'   \item \code{\link{crypto_predictive_framework}} for integrated analysis
-#' }
+#' \code{\link{get_onchain_indicators}} for fundamental crypto valuation
+#' \code{\link{get_derivatives}} for market positioning signals
 #'
-#' @references
-#' \itemize{
-#'   \item Federal Reserve Economic Data (FRED): \url{https://fred.stlouisfed.org/}
-#'   \item Bordo, M. D., & Levin, A. T. (2017). Central Bank Digital Currency
-#'     and the Future of Monetary Policy
-#'   \item Conlon, T., & McGee, R. (2020). Safe Haven or Risky Hazard? Bitcoin
-#'     during the Covid-19 Bear Market
-#'   \item Kristoufek, L. (2015). What Are the Main Drivers of the Bitcoin Price?
-#'     Evidence from Wavelet Coherence Analysis
-#' }
+#' @references Federal Reserve Economic Data (FRED): \url{https://fred.stlouisfed.org/}
 #'
-#' @author Filippo Franchini
 #' @export
-#'
-#' @importFrom dplyr lag full_join
-#' @importFrom fredr fredr_set_key fredr
-#' @importFrom quantmod getSymbols Cl
 get_macro <- function(fred_api_key = NULL, start_date = "2015-01-01"){
 
   fredr::fredr_set_key(fred_api_key)
 
-  # Global Liquidity (M2 for major economies)
   m2_us <- fredr::fredr(
     series_id = "M2SL",
     observation_start = as.Date(start_date),
@@ -913,13 +458,10 @@ get_macro <- function(fred_api_key = NULL, start_date = "2015-01-01"){
     ifelse(tail(m2_yoy, 1) < 0, "Contracting", "Stable")
   )
 
-  #---------------------------------------------------------------------------
-  # US Dollar Index (DXY) - Using FRED's Trade Weighted Dollar Index
-  #---------------------------------------------------------------------------
   dxy <- tryCatch({
     suppressWarnings({
       fredr::fredr(
-        series_id = "DTWEXBGS",  # Trade Weighted U.S. Dollar Index: Broad
+        series_id = "DTWEXBGS",
         observation_start = as.Date(start_date),
         observation_end = Sys.Date()
       )
@@ -929,18 +471,12 @@ get_macro <- function(fred_api_key = NULL, start_date = "2015-01-01"){
     return(NULL)
   })
 
-  # Handle missing values if any
   if (!is.null(dxy) && nrow(dxy) > 0) {
-    # Get the latest value
     latest_dxy <- tail(dxy$value, 1)
-
-    # Determine dollar regime
     dollar_regime <- ifelse(
-      latest_dxy > 120, "Strong Dollar (Bearish Crypto)",  # DTWEXBGS has different scale!
+      latest_dxy > 120, "Strong Dollar (Bearish Crypto)",
       ifelse(latest_dxy < 110, "Weak Dollar (Bullish Crypto)", "Neutral")
     )
-
-    # For scoring (note: thresholds adjusted for DTWEXBGS scale)
     dollar_score <- ifelse(latest_dxy > 120, -1,
                            ifelse(latest_dxy < 110, 1, 0))
   } else {
@@ -949,14 +485,12 @@ get_macro <- function(fred_api_key = NULL, start_date = "2015-01-01"){
     warning("Dollar index data unavailable")
   }
 
-  # 10-Year Treasury Yield
   treasury_10y <- fredr::fredr(
     series_id = "DGS10",
     observation_start = as.Date(start_date),
     observation_end = Sys.Date()
   )
 
-  # Inflation expectations
   inflation_expect <- fredr::fredr(
     series_id = "T5YIE",
     observation_start = as.Date(start_date),
@@ -978,31 +512,27 @@ get_macro <- function(fred_api_key = NULL, start_date = "2015-01-01"){
   rate_score <- ifelse(tail(treasury_10y$value, 1) > 3, -1,
                        ifelse(tail(treasury_10y$value, 1) < 1, 1, 0))
 
-  # Dollar score already calculated above
-
   composite_risk_score <- (m2_score + rate_score + dollar_score) / 3
 
-  return(
-    list(
-      liquidity = list(
-        m2_us = m2_us,
-        m2_yoy = m2_yoy,
-        m2_mom = m2_mom,
-        liquidity_regime = liquidity_regime
-      ),
-      rates = list(
-        treasury_10y = treasury_10y,
-        real_rates = aggregated$real_rates,
-        rate_regime = rate_regime
-      ),
-      dollar = list(
-        dxy = dxy,
-        dollar_regime = dollar_regime,
-        latest_value = if (!is.null(dxy)) tail(dxy$value, 1) else NA
-      ),
-      composite_risk_score = composite_risk_score
-    )
-  )
+  return(list(
+    liquidity = list(
+      m2_us = m2_us,
+      m2_yoy = m2_yoy,
+      m2_mom = m2_mom,
+      liquidity_regime = liquidity_regime
+    ),
+    rates = list(
+      treasury_10y = treasury_10y,
+      real_rates = aggregated$real_rates,
+      rate_regime = rate_regime
+    ),
+    dollar = list(
+      dxy = dxy,
+      dollar_regime = dollar_regime,
+      latest_value = if (!is.null(dxy)) tail(dxy$value, 1) else NA
+    ),
+    composite_risk_score = composite_risk_score
+  ))
 }
 
 
@@ -1011,8 +541,8 @@ get_macro <- function(fred_api_key = NULL, start_date = "2015-01-01"){
 #' @description
 #' Computes realized volatility across multiple time horizons and identifies
 #' volatility regimes to determine optimal trading strategies. This function
-#' is essential for adapting trading approaches to market conditions, as
-#' different volatility environments favor different strategies.
+#' adapts trading approaches to market conditions, as different volatility
+#' environments favor different strategies.
 #'
 #' @param data A data frame containing cryptocurrency price data, typically the
 #'   output from \code{\link{get_onchain_indicators()}}. Must contain a column
@@ -1025,251 +555,58 @@ get_macro <- function(fred_api_key = NULL, start_date = "2015-01-01"){
 #'   }
 #'
 #' @return A list object of class \code{volatility_data} containing:
-#'
-#'   \strong{Volatility Series:}
-#'   \itemize{
-#'     \item \code{volatility$short}: Short-term realized volatility (annualized)
-#'     \item \code{volatility$medium}: Medium-term realized volatility (annualized)
-#'     \item \code{volatility$long}: Long-term realized volatility (annualized)
-#'     \item \code{volatility$percentile_short}: Percentile rank of short-term vol (0-1)
-#'     \item \code{volatility$percentile_medium}: Percentile rank of medium-term vol (0-1)
-#'   }
-#'
-#'   \strong{Volatility Regime:}
-#'   \itemize{
-#'     \item \code{regime}: Categorical regime for each observation:
-#'       \itemize{
-#'         \item "Extreme Low": Volatility < mean - 1sd
-#'         \item "Low": Volatility between mean and mean - 1sd
-#'         \item "High": Volatility between mean and mean + 1sd
-#'         \item "Extreme High": Volatility > mean + 1sd
-#'       }
-#'   }
-#'
-#'   \strong{Trading Signals:}
-#'   \itemize{
-#'     \item \code{signals$vol_breakout}: Logical vector - TRUE when short-term vol
-#'       exceeds 1.5× medium-term vol (momentum strategy setup)
-#'     \item \code{signals$vol_compression}: Logical vector - TRUE when short-term vol
-#'       is less than 0.5× medium-term vol (mean reversion strategy setup)
-#'     \item \code{signals$current_regime}: Human-readable description of the
-#'       current market environment:
-#'       \itemize{
-#'         \item "Risk-Off (Capitulation)": Extreme High volatility - panic selling
-#'         \item "Active Trading": High volatility - opportunities with tight stops
-#'         \item "Trend Following": Low volatility - ideal for trend strategies
-#'         \item "Complacency (Watch for Breakout)": Extreme Low volatility - big move imminent
-#'       }
+#'   \describe{
+#'     \item{volatility}{List with short, medium, long-term volatility series and percentiles}
+#'     \item{regime}{Categorical regime for each observation}
+#'     \item{signals}{Trading signals including breakout/compression detection}
 #'   }
 #'
 #' @details
-#' \strong{Volatility Calculation Methodology}
-#'
 #' Realized volatility is calculated as the standard deviation of log returns,
-#' annualized by multiplying by the square root of 365 (trading days):
+#' annualized by multiplying by the square root of 365 (crypto trades 24/7).
 #'
-#' \deqn{\sigma_t = \sqrt{252} \times \sqrt{\frac{1}{n-1}\sum_{i=t-n+1}^{t} (r_i - \bar{r})^2}}
-#'
-#' Where:
+#' Volatility regimes determine optimal strategies:
 #' \itemize{
-#'   \item \eqn{r_i} are log returns
-#'   \item \eqn{n} is the window size (7, 30, or 90 days)
-#'   \item Annualization factor: \eqn{\sqrt{365}} for daily crypto trading
-#' }
-#'
-#' \strong{Why Volatility Matters}
-#'
-#' Volatility is not just risk to be managed—it's a regime indicator that
-#' determines which trading strategies are most likely to succeed:
-#'
-#' \strong{Low Volatility Regimes (Trend Following)}
-#'
-#' When volatility is low (below historical mean), markets tend to exhibit
-#' persistent trends with limited noise. This environment favors:
-#' \itemize{
-#'   \item Trend-following strategies (moving average crossovers)
-#'   \item Breakout systems
-#'   \item Longer holding periods
-#'   \item Wider stop losses (to avoid being shaken out)
-#' }
-#'
-#' \strong{High Volatility Regimes (Active Trading)}
-#'
-#' When volatility is high (above historical mean), markets become noisy with
-#' frequent sharp reversals. This environment favors:
-#' \itemize{
-#'   \item Mean reversion strategies
-#'   \item Shorter timeframes
-#'   \item Tighter stop losses
-#'   \item Range-bound trading systems
-#' }
-#'
-#' \strong{Extreme Volatility Regimes}
-#'
-#' \itemize{
-#'   \item \strong{Extreme High (> +1sd)}: Capitulation or panic selling.
-#'     Often marks short-term bottoms as selling exhausts itself.
-#'     Strategy: Wait for stabilization, then buy on first pullback.
-#'
-#'   \item \strong{Extreme Low (< -1sd)}: Market complacency.
-#'     Low volatility periods are typically followed by volatility expansion.
-#'     Strategy: Prepare for breakout, scale in gradually.
-#' }
-#'
-#' \strong{Volatility Breakout Signal}
-#'
-#' When short-term volatility exceeds 1.5× medium-term volatility, it indicates:
-#' \itemize{
-#'   \item A volatility expansion event is occurring
-#'   \item Momentum is accelerating in one direction
-#'   \item Trend-following strategies should be employed
-#' }
-#'
-#' \strong{Volatility Compression Signal}
-#'
-#' When short-term volatility falls below 0.5× medium-term volatility, it indicates:
-#' \itemize{
-#'   \item Market is consolidating / range-bound
-#'   \item Volatility is contracting (calm before the storm)
-#'   \item Mean reversion strategies should be employed
-#'   \item A volatility expansion is likely approaching
+#'   \item \strong{Extreme Low}: Prepare for breakout, scale in gradually
+#'   \item \strong{Low}: Trend following, full position sizes
+#'   \item \strong{High}: Active trading, reduced position sizes
+#'   \item \strong{Extreme High}: Capitulation - wait for stabilization
 #' }
 #'
 #' @note
 #' \itemize{
-#'   \item The first \code{max(windows)} observations will have NA values for
-#'     volatility calculations.
-#'   \item Annualization uses 365 days (crypto trades 24/7) rather than 252
-#'     (traditional markets). Adjust if you prefer different conventions.
-#'   \item Percentile ranks are calculated over the entire dataset and will
-#'     change as new data is added.
-#'   \item The 1.5× and 0.5× thresholds are configurable based on backtesting.
+#'   \item First \code{max(windows)} observations will have NA values
+#'   \item Annualization uses 365 days for crypto markets
+#'   \item Percentile ranks calculated over entire dataset
 #' }
 #'
 #' @examples
 #' \dontrun{
-#' # Get market data and calculate on-chain indicators first
 #' market <- get_market_data("Bitcoin", "2018-01-01")
 #' onchain <- get_onchain_indicators(market$data)
-#'
-#' # Calculate volatility metrics
 #' vol <- get_volatility(onchain)
-#'
-#' # View current volatility regime
-#' cat("Current regime:", tail(vol$regime, 1), "\n")
-#' cat("Market environment:", vol$signals$current_regime, "\n")
-#'
-#' # Check for volatility signals
-#' if (tail(vol$signals$vol_compression, 1)) {
-#'   cat("⚠️  Volatility compression detected - prepare for breakout\n")
-#'   cat("Recommended strategy: Mean reversion, range trading\n")
-#' } else if (tail(vol$signals$vol_breakout, 1)) {
-#'   cat("🚀 Volatility breakout detected - trend in progress\n")
-#'   cat("Recommended strategy: Trend following, momentum\n")
 #' }
 #'
-#' # Plot volatility with regimes
-#' library(ggplot2)
-#' vol_df <- data.frame(
-#'   date = tail(onchain$timestamp, 500),
-#'   vol_short = tail(vol$volatility$short, 500),
-#'   vol_medium = tail(vol$volatility$medium, 500),
-#'   regime = tail(vol$regime, 500)
-#' )
-#'
-#' ggplot(vol_df, aes(x = date)) +
-#'   geom_line(aes(y = vol_short, color = "Short-term Vol"), size = 0.8) +
-#'   geom_line(aes(y = vol_medium, color = "Medium-term Vol"), size = 0.8) +
-#'   geom_hline(yintercept = mean(vol_df$vol_medium, na.rm = TRUE),
-#'              linetype = "dashed", alpha = 0.5) +
-#'   scale_color_manual(values = c("Short-term Vol" = "darkblue",
-#'                                 "Medium-term Vol" = "red")) +
-#'   labs(title = "Bitcoin Realized Volatility",
-#'        subtitle = "Short-term (7d) vs Medium-term (30d)",
-#'        y = "Annualized Volatility", x = "Date") +
-#'   theme_minimal()
-#'
-#' # Volatility percentile analysis
-#' current_percentile <- tail(vol$volatility$percentile_medium, 1)
-#' cat("Current volatility percentile:",
-#'     round(current_percentile * 100, 1), "%\n")
-#'
-#' if (current_percentile > 0.9) {
-#'   cat("Warning: Volatility in top 10% historically\n")
-#' } else if (current_percentile < 0.1) {
-#'   cat("Alert: Volatility in bottom 10% historically\n")
-#' }
-#' }
-#'
-#' @section Trading Strategy Selection:
-#' Use volatility regimes to select appropriate trading strategies:
-#'
-#' \describe{
-#'   \item{\strong{Extreme Low Regime}}{%
-#'     \itemize{
-#'       \item \strong{Strategy:} Prepare for breakout
-#'       \item \strong{Position Sizing:} Scale in gradually
-#'       \item \strong{Stop Loss:} Wide
-#'     }
-#'   }
-#'   \item{\strong{Low Regime}}{%
-#'     \itemize{
-#'       \item \strong{Strategy:} Trend following
-#'       \item \strong{Position Sizing:} Full size
-#'       \item \strong{Stop Loss:} Wider
-#'     }
-#'   }
-#'   \item{\strong{High Regime}}{%
-#'     \itemize{
-#'       \item \strong{Strategy:} Active trading
-#'       \item \strong{Position Sizing:} Reduced size
-#'       \item \strong{Stop Loss:} Tight
-#'     }
-#'   }
-#'   \item{\strong{Extreme High Regime}}{%
-#'     \itemize{
-#'       \item \strong{Strategy:} Capitulation - wait
-#'       \item \strong{Position Sizing:} Cash/minimal
-#'       \item \strong{Stop Loss:} Very tight
-#'     }
-#'   }
-#' }
-#'
-#'
-#' @seealso
-#' \itemize{
-#'   \item \code{\link{get_onchain_indicators}} for source log returns
-#'   \item \code{\link{get_derivatives}} for positioning context
-#'   \item \code{\link{crypto_predictive_framework}} for integrated analysis
-#' }
+#' @seealso \code{\link{get_onchain_indicators}} for source log returns
 #'
 #' @references
 #' \itemize{
-#'   \item Andersen, T. G., & Bollerslev, T. (1998). Answering the Skeptics:
-#'     Yes, Standard Volatility Models Do Provide Accurate Forecasts
-#'   \item Patton, A. J. (2011). Volatility Forecast Comparison Using Imperfect
-#'     Volatility Proxies
+#'   \item Andersen, T. G., & Bollerslev, T. (1998)
 #'   \item CBOE (2023). VIX Index Rules of Construction
 #' }
 #'
-#' @author Filippo Franchini
 #' @export
-#'
-#' @importFrom TTR runSD
 get_volatility <- function(data, windows = list(short = 7, medium = 30, long = 90)) {
 
   returns <- data$log_returns
 
-  # Realized volatility for different horizons
   vol_short <- TTR::runSD(returns, n = windows$short) * sqrt(365)
   vol_medium <- TTR::runSD(returns, n = windows$medium) * sqrt(365)
   vol_long <- TTR::runSD(returns, n = windows$long) * sqrt(365)
 
-  # Volatility percentiles
   vol_percentile_short <- rank(vol_short, na.last = "keep") / sum(!is.na(vol_short))
   vol_percentile_medium <- rank(vol_medium, na.last = "keep") / sum(!is.na(vol_medium))
 
-  # GARCH-style volatility clustering
   vol_mean <- mean(vol_short, na.rm = TRUE)
   vol_sd <- sd(vol_short, na.rm = TRUE)
 
@@ -1281,7 +618,6 @@ get_volatility <- function(data, windows = list(short = 7, medium = 30, long = 9
     TRUE ~ "Low"
   )
 
-  # Current regime with fallback
   current_regime <- tail(vol_regime_short[!is.na(vol_regime_short)], 1)
   if (length(current_regime) == 0) current_regime <- "Unknown"
 
@@ -1292,7 +628,6 @@ get_volatility <- function(data, windows = list(short = 7, medium = 30, long = 9
                                 "Extreme Low" = "Complacency (Watch for Breakout)",
                                 "Unknown")
 
-  # Volatility signals
   signals <- list(
     vol_breakout = !is.na(vol_short) & !is.na(vol_medium) & vol_short > vol_medium * 1.5,
     vol_compression = !is.na(vol_short) & !is.na(vol_medium) & vol_short < vol_medium * 0.5,
@@ -1310,8 +645,8 @@ get_volatility <- function(data, windows = list(short = 7, medium = 30, long = 9
     regime = vol_regime_short,
     signals = signals
   ))
-
 }
+
 
 #' Fetch Positioning Data from Morpho Vaults
 #'
@@ -1322,106 +657,49 @@ get_volatility <- function(data, windows = list(short = 7, medium = 30, long = 9
 #'
 #' @param include_depositors Logical. Whether to fetch top depositor data (slower). Default TRUE.
 #' @param include_flows Logical. Whether to fetch transaction flow data (slower). Default TRUE.
-#' @param top_n_vaults Integer. Number of top vaults to analyze for depositors/flows. Default 10.
-#' @param max_depositors_per_vault Integer. Maximum depositors to fetch per vault. Default 20.
+#' @param top_n_vaults Integer. Number of top vaults to analyze for depositors/flows. Default 5.
+#' @param max_depositors_per_vault Integer. Maximum depositors to fetch per vault. Default 10.
 #'
 #' @return A list object of class \code{positioning_data} containing:
-#'
-#'   \strong{Exchange Positioning:}
-#'   \itemize{
-#'     \item \code{netflow_summary}: Data frame with:
-#'       \itemize{
-#'         \item \code{inflow_usd}: Total USD value of deposits into vaults
-#'         \item \code{outflow_usd}: Total USD value of withdrawals from vaults
-#'         \item \code{tx_count}: Total number of transactions
-#'         \item \code{pct}: Top 5 depositors share percentage (concentration)
-#'         \item \code{netflow_usd}: Net flow (inflow - outflow)
-#'       }
-#'     \item \code{flow_regime}: Categorical interpretation of vault flows
-#'     \item \code{top_exchange_target}: Largest BTC-exposed vault
-#'   }
-#'
-#'   \strong{Whale Activity Metrics:}
-#'   \itemize{
-#'     \item \code{total_tx}: Number of unique whale wallets identified
-#'     \item \code{whale_signal}: Activity level interpretation based on vault sizes
-#'     \item \code{largest_move_usd}: Size of the largest BTC-exposed vault
-#'   }
-#'
-#'   \strong{Raw Data:}
-#'   \itemize{
-#'     \item \code{raw_positioning_data}: Complete Morpho data from \code{\link{get_morpho_positioning}}
-#'     \item \code{data_source}: Always "Morpho Vaults"
+#'   \describe{
+#'     \item{exchange_positioning}{Flow summary and regime classification}
+#'     \item{whale_activity}{Whale wallet counts and activity signals}
+#'     \item{raw_positioning_data}{Complete Morpho data from \code{\link{get_morpho_positioning}}}
+#'     \item{data_source}{Always "Morpho Vaults"}
 #'   }
 #'
 #' @details
-#' \strong{Why Morpho Vaults Matter for Positioning}
-#'
 #' Morpho vaults reveal actual capital deployment in DeFi lending markets:
 #' \itemize{
 #'   \item \strong{Vault Inflows}: BTC entering productive use (bullish signal)
-#'   \item \strong{Vault Outflows}: BTC returning to cold storage (neutral/bearish)
-#'   \item \strong{Whale Concentration}: Identifies systemic risk through HHI and top depositor share
-#'   \item \strong{Vault Composition}: Shows whether exposure is through direct deposits or collateralized lending
+#'   \item \strong{Vault Outflows}: BTC returning to cold storage (bearish signal)
+#'   \item \strong{Whale Concentration}: Identifies systemic risk through HHI
+#'   \item \strong{Vault Composition}: Direct deposits vs collateralized lending
 #' }
-#'
-#' This provides a more sophisticated view of "smart money" positioning than
-#' simple exchange flow tracking, revealing not just movement but actual
-#' economic activity and concentration risk.
 #'
 #' @note
 #' \itemize{
-#'   \item No API key required - all data is from public Morpho endpoints
+#'   \item No API key required - data from public Morpho endpoints
 #'   \item Rate limits may apply for intensive queries
 #' }
 #'
 #' @examples
 #' \dontrun{
-#' # Basic usage - get current positioning
 #' positioning <- get_positioning()
-#'
-#' # View summary
-#' print(positioning)
-#'
-#' # Access specific components
-#' positioning$exchange_positioning$flow_regime
-#' positioning$whale_activity$whale_signal
-#' positioning$raw_positioning_data$whale_concentration
-#'
-#' # Check whale concentration
-#' if (!is.null(positioning$raw_positioning_data$whale_concentration)) {
-#'   cat("Market concentration:",
-#'       positioning$raw_positioning_data$whale_concentration$hhi_interpretation)
-#' }
 #' }
 #'
 #' @seealso
-#' \itemize{
-#'   \item \code{\link{get_morpho_positioning}} for detailed Morpho data
-#'   \item \code{\link{get_derivatives}} for derivatives market positioning
-#'   \item \code{\link{get_onchain_indicators}} for fundamental valuation
-#'   \item \code{\link{get_google_trends}} for retail sentiment data
-#' }
+#' \code{\link{get_morpho_positioning}} for detailed Morpho data
+#' \code{\link{get_derivatives}} for derivatives market positioning
 #'
-#' @author Filippo Franchini
 #' @export
-#'
-#' @importFrom dplyr case_when
 get_positioning <- function(include_depositors = TRUE,
                             include_flows = TRUE,
                             top_n_vaults = 5,
                             max_depositors_per_vault = 10) {
 
-  #---------------------------------------------------------------------------
-  # NULL coalescing helper
-  #---------------------------------------------------------------------------
   `%||%` <- function(x, y) if (is.null(x) || length(x) == 0 || (length(x) == 1 && is.na(x))) y else x
 
-  #---------------------------------------------------------------------------
-  # FETCH MORPHO DATA
-  #---------------------------------------------------------------------------
-
-  # Get Morpho data
   morpho_data <- tryCatch({
     get_morpho_positioning(
       include_depositors = include_depositors,
@@ -1439,7 +717,6 @@ get_positioning <- function(include_depositors = TRUE,
     return(create_empty_positioning(source = "Morpho Failed"))
   }
 
-  # Map Morpho whale signal to flow regime categories
   flow_regime_from_whale <- dplyr::case_when(
     grepl("High Whale Intensity", morpho_data$whale_activity$whale_signal) ~
       "High Whale Activity (Volatility Expected)",
@@ -1450,9 +727,7 @@ get_positioning <- function(include_depositors = TRUE,
     TRUE ~ morpho_data$whale_activity$whale_signal %||% "Unknown"
   )
 
-  # Map Morpho data to standardized structure
   result <- list(
-    # Exchange positioning (mapped from vault data)
     exchange_positioning = list(
       netflow_summary = data.frame(
         inflow_usd = morpho_data$flow_summary$total_inflow_usd %||% 0,
@@ -1463,14 +738,11 @@ get_positioning <- function(include_depositors = TRUE,
         netflow_usd = morpho_data$flow_summary$net_flow_usd %||% 0
       ),
       flow_regime = morpho_data$flow_summary$flow_regime %||%
-        flow_regime_from_whale %||%
-        "Unknown",
+        flow_regime_from_whale %||% "Unknown",
       top_exchange_target = if (!is.null(morpho_data$top_vaults) && nrow(morpho_data$top_vaults) > 0)
         morpho_data$top_vaults$vault_display[1]
       else NA_character_
     ),
-
-    # Whale activity (mapped from depositor data)
     whale_activity = list(
       total_tx = morpho_data$whale_concentration$total_whale_wallets %||%
         nrow(morpho_data$vault_summary) %||% 0,
@@ -1479,13 +751,10 @@ get_positioning <- function(include_depositors = TRUE,
         morpho_data$vault_summary$btc_exposure_usd[1]
       else 0
     ),
-
-    # Raw data
     raw_positioning_data = morpho_data,
     data_source = "Morpho Vaults"
   )
 
-  # Add interpretation
   result$interpretation <- morpho_data$interpretation %||%
     "Morpho positioning data collected successfully."
 
@@ -1493,10 +762,18 @@ get_positioning <- function(include_depositors = TRUE,
   return(result)
 }
 
+
 #' Create empty positioning data structure
 #'
+#' @description
+#' Internal function to create a standardized empty positioning structure
+#' when data fetching fails. Ensures downstream functions receive a valid
+#' object even when no data is available.
+#'
 #' @param source Character string indicating the source that failed
-#' @return A list with the same structure as get_positioning but with empty data
+#'
+#' @return A list with the same structure as \code{\link{get_positioning}} but with empty data
+#'
 #' @keywords internal
 create_empty_positioning <- function(source = "Unknown") {
 
@@ -1528,10 +805,18 @@ create_empty_positioning <- function(source = "Unknown") {
   return(result)
 }
 
+
 #' Print method for positioning_data
 #'
-#' @param x positioning_data object
-#' @param ... Additional arguments
+#' @description
+#' Custom print method for positioning_data objects, providing a formatted
+#' summary of positioning data including flow regime, net flows, and whale activity.
+#'
+#' @param x An object of class \code{positioning_data}
+#' @param ... Additional arguments (ignored)
+#'
+#' @return Invisibly returns the input object
+#'
 #' @export
 print.positioning_data <- function(x, ...) {
   cat("\n", paste(rep("=", 80), collapse = ""), "\n")
@@ -1557,10 +842,13 @@ print.positioning_data <- function(x, ...) {
   invisible(x)
 }
 
+
 #' Fetch Google Trends Data
 #'
 #' @description
-#' Simple function to fetch Google Trends data. Returns sentiment score and signal.
+#' Fetches Google Trends data for specified keywords to gauge retail sentiment
+#' and public interest in cryptocurrency topics. Returns sentiment score and
+#' signal based on 7-day average search interest.
 #'
 #' @param keywords Character vector of keywords to search for. Default "bitcoin".
 #'
@@ -1571,35 +859,52 @@ print.positioning_data <- function(x, ...) {
 #'     \item \code{interest_over_time}: Full historical data
 #'     \item \code{keywords}: Keywords used
 #'   }
-#' @export
 #'
-#' @importFrom gtrendsR gtrends
-#' @importFrom dplyr case_when
+#' @details
+#' Search interest is normalized to a 0-100 scale, where 100 represents peak
+#' popularity for the selected time range. The function calculates the 7-day
+#' average and classifies sentiment:
+#' \itemize{
+#'   \item \strong{>80}: Extreme Interest (Potential Top)
+#'   \item \strong{60-80}: High Interest
+#'   \item \strong{20-60}: Normal Interest
+#'   \item \strong{<20}: Low Interest (Potential Bottom)
+#' }
+#'
+#' @note
+#' \itemize{
+#'   \item Google Trends data may be subject to sampling and regional variations
+#'   \item API rate limits apply; use responsibly
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' trends <- get_google_trends("bitcoin")
+#' }
+#'
+#' @seealso \code{\link{get_fear_greed}} for alternative sentiment indicator
+#'
+#' @export
 get_google_trends <- function(keywords = "bitcoin") {
 
   result <- tryCatch({
-    # Fetch Google Trends data
     trends <- gtrendsR::gtrends(
       keyword = keywords,
       time = "today 3-m",
       gprop = "web"
     )
 
-    # Check if we got data
     if (is.null(trends$interest_over_time)) {
       warning("No interest_over_time data returned from Google Trends")
       return(NULL)
     }
 
-    # Process the data
     interest_data <- trends$interest_over_time
     interest_data$date <- as.Date(interest_data$date)
 
-    # Calculate 7-day average
     recent_interest <- interest_data[interest_data$date > Sys.Date() - 7, ]
     sentiment_score <- mean(recent_interest$hits, na.rm = TRUE)
 
-    # Generate sentiment signal
     sentiment_signal <- dplyr::case_when(
       sentiment_score > 80 ~ "Extreme Interest (Potential Top)",
       sentiment_score > 60 ~ "High Interest",
@@ -1607,7 +912,6 @@ get_google_trends <- function(keywords = "bitcoin") {
       TRUE ~ "Low Interest (Potential Bottom)"
     )
 
-    # Return results
     return(list(
       interest_over_time = interest_data,
       related_queries = trends$related_queries,
@@ -1625,11 +929,13 @@ get_google_trends <- function(keywords = "bitcoin") {
   return(result)
 }
 
-#' Fetch Fear & Greed Index using cryptoQuotes
+
+#' Fetch Fear & Greed Index
 #'
 #' @description
 #' Retrieves the Crypto Fear & Greed Index from alternative.me via the cryptoQuotes package.
-#' The index ranges from 0 (Extreme Fear) to 100 (Extreme Greed).
+#' The index ranges from 0 (Extreme Fear) to 100 (Extreme Greed), providing a contrarian
+#' sentiment indicator for cryptocurrency markets.
 #'
 #' @param days Integer. Number of days of historical data to fetch. Default 30.
 #'
@@ -1639,27 +945,42 @@ get_google_trends <- function(keywords = "bitcoin") {
 #'     \item \code{current_classification}: Text classification
 #'     \item \code{timestamp}: When the data was fetched
 #'     \item \code{history}: xts object with historical values
+#'     \item \code{source}: Data source attribution
 #'   }
-#' @export
 #'
-#' @importFrom cryptoQuotes get_fgindex
+#' @details
+#' Classification thresholds:
+#' \itemize{
+#'   \item \strong{0-25}: Extreme Fear (potential buying opportunity)
+#'   \item \strong{25-45}: Fear
+#'   \item \strong{45-55}: Neutral
+#'   \item \strong{55-75}: Greed
+#'   \item \strong{75-100}: Extreme Greed (potential selling opportunity)
+#' }
+#'
+#' The index is a contrarian indicator - extreme fear often precedes market bottoms,
+#' while extreme greed often precedes market tops.
+#'
+#' @examples
+#' \dontrun{
+#' fgi <- get_fear_greed()
+#' }
+#'
+#' @seealso \code{\link{get_google_trends}} for retail search sentiment
+#'
+#' @export
 get_fear_greed <- function(days = 30) {
 
   tryCatch({
-    # Fetch from cryptoQuotes
-    fgi <- cryptoQuotes::get_fgindex(
-      from = Sys.Date() - days
-    )
+    fgi <- cryptoQuotes::get_fgindex(from = Sys.Date() - days)
 
     if (is.null(fgi) || nrow(fgi) == 0) {
       warning("No Fear & Greed data returned")
       return(NULL)
     }
 
-    # Get current value (most recent)
     current_value <- as.numeric(tail(fgi$fgi, 1))
 
-    # Classify the value
     classification <- dplyr::case_when(
       current_value >= 75 ~ "Extreme Greed",
       current_value >= 55 ~ "Greed",
@@ -1668,7 +989,6 @@ get_fear_greed <- function(days = 30) {
       TRUE ~ "Extreme Fear"
     )
 
-    # Return structured data
     return(list(
       current_value = current_value,
       current_classification = classification,

@@ -15,12 +15,23 @@ get_vault_v1_allocations(
 
 \item{chain_ids}{Integer vector. Filter by chain IDs (default: c(1, 8453))}
 
-\item{human_readable}{Logical. Add formatted columns (default: FALSE)}
+\item{human_readable}{Logical. Add formatted columns for display (default: FALSE)}
 }
 \value{
-A tibble with vault allocations to markets
+A tibble with vault allocations, containing:
+  \itemize{
+    \item \code{vault_address}: Address of the vault
+    \item \code{vault_name}: Name of the vault
+    \item \code{market_key}: Unique identifier for the market
+    \item \code{loan_asset}: Asset being lent
+    \item \code{collateral_asset}: Asset accepted as collateral
+    \item \code{lltv}: Loan-to-value ratio
+    \item \code{supply_assets_usd}: Amount supplied to this market in USD
+    \item \code{allocation_pct}: Percentage of vault allocated to this market
+  }
 }
 \description{
-Retrieves the current allocation of assets across markets for each Vault V1.
-Each row represents one market allocation within a vault.
+Retrieves the current allocation of assets across lending markets for each Vault V1.
+Each row in the output represents one market allocation within a vault, showing how
+the vault distributes its capital across different lending opportunities.
 }

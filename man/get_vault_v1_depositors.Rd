@@ -2,7 +2,7 @@
 % Please edit documentation in R/morpho_v1.R
 \name{get_vault_v1_depositors}
 \alias{get_vault_v1_depositors}
-\title{Get top depositors for a specific Vault V1 with automatic chain detection}
+\title{Get top depositors for a specific Vault V1}
 \usage{
 get_vault_v1_depositors(
   vault_address,
@@ -18,11 +18,20 @@ get_vault_v1_depositors(
 
 \item{chain_id}{Integer. Optional specific chain ID. If NULL, scans all chains.}
 
-\item{verbose}{Logical. Print progress (default: TRUE)}
+\item{verbose}{Logical. Print progress information (default: TRUE)}
 }
 \value{
-A tibble with depositor information
+A tibble with depositor information including:
+  \itemize{
+    \item \code{user_address}: Ethereum address of the depositor
+    \item \code{shares}: Number of vault shares held
+    \item \code{assets}: Underlying asset amount
+    \item \code{assets_usd}: USD value of position
+    \item \code{share_pct}: Percentage of total vault shares
+  }
 }
 \description{
-Get top depositors for a specific Vault V1 with automatic chain detection
+Retrieves the largest depositors for a given vault, with automatic chain detection.
+The function scans all supported chains to locate the vault and returns the top depositors
+by share amount.
 }

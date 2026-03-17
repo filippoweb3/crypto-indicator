@@ -2,7 +2,7 @@
 % Please edit documentation in R/morpho_v1.R
 \name{.fetch_vault_v1_by_address}
 \alias{.fetch_vault_v1_by_address}
-\title{Internal function to fetch vault data for a specific chain}
+\title{Get vault data for a specific chain}
 \usage{
 .fetch_vault_v1_by_address(vault_address, chain_id)
 }
@@ -12,9 +12,10 @@
 \item{chain_id}{Integer. Chain ID}
 }
 \value{
-A list with vault metrics or NULL if not found
+A list with vault metrics including address, name, asset details, TVL, and liquidity,
+  or NULL if the vault is not found on the specified chain.
 }
 \description{
-Internal function to fetch vault data for a specific chain
+Internal function to fetch detailed information about a specific vault on a given chain.
 }
 \keyword{internal}

@@ -19,5 +19,33 @@ A list containing:
   }
 }
 \description{
-Simple function to fetch Google Trends data. Returns sentiment score and signal.
+Fetches Google Trends data for specified keywords to gauge retail sentiment
+and public interest in cryptocurrency topics. Returns sentiment score and
+signal based on 7-day average search interest.
+}
+\details{
+Search interest is normalized to a 0-100 scale, where 100 represents peak
+popularity for the selected time range. The function calculates the 7-day
+average and classifies sentiment:
+\itemize{
+  \item \strong{>80}: Extreme Interest (Potential Top)
+  \item \strong{60-80}: High Interest
+  \item \strong{20-60}: Normal Interest
+  \item \strong{<20}: Low Interest (Potential Bottom)
+}
+}
+\note{
+\itemize{
+  \item Google Trends data may be subject to sampling and regional variations
+  \item API rate limits apply; use responsibly
+}
+}
+\examples{
+\dontrun{
+trends <- get_google_trends("bitcoin")
+}
+
+}
+\seealso{
+\code{\link{get_fear_greed}} for alternative sentiment indicator
 }

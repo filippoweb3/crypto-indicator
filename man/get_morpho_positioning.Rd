@@ -20,25 +20,37 @@ get_morpho_positioning(
 
 \item{min_exposure_usd}{Numeric. Minimum BTC exposure in USD to consider a vault (default: 1e5, i.e., $100k)}
 
-\item{include_depositors}{Logical. Whether to fetch top depositors (slower) (default: FALSE)}
+\item{include_depositors}{Logical. Whether to fetch top depositor data (slower) (default: TRUE)}
 
-\item{include_flows}{Logical. Whether to fetch transaction data (up to 1000 tx) (default: FALSE)}
+\item{include_flows}{Logical. Whether to fetch transaction flow data (slower) (default: TRUE)}
 
-\item{top_n_vaults}{Integer. Number of top vaults to fetch depositors/flows for (default: 3)}
+\item{top_n_vaults}{Integer. Number of top vaults to analyze for depositors/flows (default: 5)}
 
-\item{max_depositors_per_vault}{Integer. Maximum number of depositors to fetch per vault (default: 10)}
+\item{max_depositors_per_vault}{Integer. Maximum depositors to fetch per vault (default: 10)}
 
-\item{human_readable}{Logical. Include formatted columns (default: TRUE)}
+\item{human_readable}{Logical. Include formatted columns for display (default: TRUE)}
+
+\item{verbose}{Logical. Print progress information (default: FALSE)}
 }
 \value{
-A list object of class \code{morpho_positioning_data}
+A list object of class \code{morpho_positioning_data} containing:
+  \itemize{
+    \item \code{vault_summary}: Summary of all BTC-exposed vaults
+    \item \code{whale_activity}: Aggregate metrics on whale activity
+    \item \code{whale_concentration}: Market concentration analysis including HHI
+    \item \code{vault_flows}: Capital flow analysis for top vaults
+    \item \code{top_depositors}: Detailed depositor information
+    \item \code{interpretation}: Text summary of key findings
+  }
 }
 \description{
 Retrieves and analyzes positioning data from Morpho vaults, specifically tracking
-BTC exposure through two channels:
-1. Direct deposits of BTC tokens (WBTC, cbBTC) into vaults
-2. Vault allocations to markets where BTC tokens are used as collateral
+Bitcoin exposure through two channels:
+\enumerate{
+  \item Direct deposits of BTC tokens (WBTC, cbBTC) into vaults
+  \item Vault allocations to markets where BTC tokens are used as collateral
+}
 
 This provides a comprehensive view of "smart money" flows and whale activity
-in Bitcoin DeFi lending markets.
+in Bitcoin DeFi lending markets, including concentration metrics and capital flow analysis.
 }

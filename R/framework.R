@@ -6,64 +6,112 @@
 #' coherent decision system that generates actionable signals across multiple
 #' time horizons (short-term, medium-term, long-term).
 #'
+#' The framework employs a hierarchical decision structure where risk assessment
+#' overrides opportunistic signals when market conditions become dangerous,
+#' ensuring capital preservation remains the primary objective.
+#'
 #' @param assets Character vector of cryptocurrency names to analyze.
 #'   Default \code{c("Bitcoin")}. Currently optimized for Bitcoin, but extensible
-#'   to other assets that have sufficient data.
+#'   to other assets with sufficient data.
 #' @param start_date Start date for historical data in "YYYY-MM-DD" format.
 #'   Default \code{"2015-01-01"} provides a full market cycle of data.
 #' @param fred_api_key Character string containing your FRED API key.
-#'   Default \code{NULL}. If provided, will be stored in global environment.
-#'   Register at \url{https://fred.stlouisfed.org/docs/api/api_key.html}
-#' @param derivatives_lookback_days Integer. Number of days of derivatives data to fetch
-#'   for percentile calculations. Default \code{90} (increased from 27 for statistical validity).
+#'   Default \code{NULL}. Register at \url{https://fred.stlouisfed.org/docs/api/api_key.html}
 #' @param risk_override Logical. If TRUE, risk-off signals override conflicting
 #'   time horizon signals. Default \code{TRUE}.
 #' @param verbose Logical. Print detailed progress messages. Default \code{TRUE}.
 #'
-#' @return A list object of class \code{crypto_framework} containing seven
-#'   main sections as documented in the package.
+#' @return A list object of class \code{crypto_framework} containing seven main sections:
+#'   \describe{
+#'     \item{metadata}{Run information including timestamp, status, warnings}
+#'     \item{raw_data}{Original data from each source (market, derivatives, macro, positioning, sentiment)}
+#'     \item{indicators}{Calculated indicators (on-chain metrics, volatility regimes)}
+#'     \item{signals}{Latest signals from each module with interpretations}
+#'     \item{decisions}{Framework outputs by time horizon with position sizing}
+#'     \item{summary}{Condensed actionable summary with bullet points}
+#'   }
+#'
+#' @details
+#' \strong{Multi-Timeframe Decision Framework}
+#'
+#' The framework generates signals across three distinct time horizons:
+#' \itemize{
+#'   \item \strong{Short-term (hours to days)}: Combines derivatives positioning with recent price momentum
+#'   \item \strong{Medium-term (weeks to months)}: Synthesizes on-chain valuation, macro conditions, and whale flows
+#'   \item \strong{Long-term (months to years)}: Based on cycle analysis and halving schedules
+#' }
+#'
+#' \strong{Risk-Off Override}
+#'
+#' The risk-off signal acts as a circuit breaker, taking precedence over all
+#' other signals when market conditions become dangerous. Risk factors include:
+#' \itemize{
+#'   \item Extreme volatility (panic conditions)
+#'   \item Severe macro headwinds
+#'   \item Critical whale concentration (systemic risk)
+#'   \item Extreme sentiment readings
+#' }
+#'
+#' When risk is HIGH (RED), the framework:
+#' \itemize{
+#'   \item Disables short-term trading signals
+#'   \item Reduces medium-term allocation to 15%
+#'   \item Shifts long-term strategy to defensive accumulation
+#' }
+#'
+#' @note
+#' \itemize{
+#'   \item The framework is optimized for Bitcoin but can analyze other assets
+#'   \item FRED API key is optional; without it, macro data will be unavailable
+#'   \item Internet connection required for all data sources
+#'   \item Some indicators (e.g., Puell Multiple) are Bitcoin-specific
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' # Basic usage
+#' result <- crypto_predictive_framework()
+#'
+#' # With FRED API key
+#' result <- crypto_predictive_framework(
+#'   assets = "Bitcoin",
+#'   start_date = "2015-01-01",
+#'   fred_api_key = "your_fred_key"
+#' )
+#' }
+#'
+#' @seealso
+#' \code{\link{print_crypto_summary}} for formatted output
+#' \code{\link{get_market_data}} for raw data acquisition
 #'
 #' @export
-#'
-#' @importFrom dplyr filter slice_tail case_when select arrange mutate
-#' @importFrom utils head
 crypto_predictive_framework <- function(assets = c("Bitcoin"),
                                         start_date = "2015-01-01",
                                         fred_api_key = NULL,
                                         risk_override = TRUE,
                                         verbose = TRUE) {
 
-  #---------------------------------------------------------------------------
-  # NULL coalescing helper (for internal use)
-  #---------------------------------------------------------------------------
+  # NULL coalescing helper
   `%||%` <- function(x, y) if (is.null(x) || length(x) == 0 || (length(x) == 1 && is.na(x))) y else x
 
-  #---------------------------------------------------------------------------
   # Helper function for safe tail operations
-  #---------------------------------------------------------------------------
   safe_tail <- function(x, n = 1) {
     if (is.null(x) || length(x) == 0) return(NA)
     tryCatch(tail(x, n), error = function(e) NA)
   }
 
-  #---------------------------------------------------------------------------
   # Helper function to check proximity to thresholds
-  #---------------------------------------------------------------------------
   check_threshold_proximity <- function(value, threshold, threshold_name,
                                         proximity_pct = 5) {
     if (is.na(value) || is.na(threshold)) return(NULL)
-
     diff_pct <- abs((value - threshold) / threshold) * 100
     if (diff_pct <= proximity_pct) {
-      return(paste0(threshold_name, " threshold (within ",
-                    round(diff_pct, 1), "%)"))
+      return(paste0(threshold_name, " threshold (within ", round(diff_pct, 1), "%)"))
     }
     return(NULL)
   }
 
-  #---------------------------------------------------------------------------
-  # INITIALIZATION
-  #---------------------------------------------------------------------------
+  # Initialize framework structure
   framework <- list(
     metadata = list(
       timestamp = Sys.time(),
@@ -96,7 +144,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     market_data <- get_market_data(assets = assets, start_date = start_date)
     framework$raw_data$market <- market_data
 
-    # Get Bitcoin data (assuming first asset is Bitcoin)
     btc_data <- market_data$data %>%
       dplyr::filter(slug == tolower(assets[1]))
 
@@ -120,14 +167,10 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   if (verbose) message("⛓️  Calculating on-chain indicators...")
 
   tryCatch({
-    # Add market cap column if not present
     if (!"market_cap" %in% names(btc_data)) {
-      # Use dynamic supply calculation instead of hardcoded
       btc_data$market_cap <- btc_data$close *
         sapply(btc_data$timestamp, function(d) {
-          # Approximate supply based on date (simplified)
           years_since_genesis <- as.numeric(d - as.Date("2009-01-03")) / 365.25
-          # Rough approximation: ~328,500 BTC per year
           max(0, 50 * 144 * 365.25 * min(years_since_genesis, 4) +
                 25 * 144 * 365.25 * max(0, min(years_since_genesis - 4, 4)) +
                 12.5 * 144 * 365.25 * max(0, min(years_since_genesis - 8, 4)) +
@@ -139,11 +182,9 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     onchain_data <- get_onchain_indicators(btc_data)
     framework$indicators$onchain <- onchain_data
 
-    # Extract latest on-chain signals
     latest_onchain <- onchain_data %>%
       dplyr::slice_tail(n = 1)
 
-    # Add proximity warnings for thresholds
     mvrv_value <- as.numeric(latest_onchain$mvrv)
     mvrv_proximity <- c(
       check_threshold_proximity(mvrv_value, 0.7, "Extreme Bottom"),
@@ -183,7 +224,7 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   })
 
   #---------------------------------------------------------------------------
-  # DERIVATIVES INDICATORS (with improved lookback)
+  # DERIVATIVES INDICATORS
   #---------------------------------------------------------------------------
   if (verbose) message("📈 Fetching derivatives data...")
 
@@ -191,19 +232,14 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   if (verbose) message("  Ticker: ", ticker)
 
   tryCatch({
-    # Use extended lookback for meaningful percentiles
-    deriv_result <- get_derivatives(
-      ticker = ticker
-    )
+    deriv_result <- get_derivatives(ticker = ticker)
     framework$raw_data$derivatives <- deriv_result
 
     if (!is.null(deriv_result$data) && nrow(deriv_result$data) > 0) {
 
-      # Get latest values
       signals_list <- deriv_result$signals
-
-      # Calculate percentile confidence based on sample size
       n_obs <- sum(!is.na(deriv_result$data$open_interest))
+
       percentile_confidence <- dplyr::case_when(
         n_obs >= 180 ~ "High",
         n_obs >= 90 ~ "Medium",
@@ -329,7 +365,7 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   if (verbose) message("🐋 Fetching Morpho vault positioning data...")
 
   tryCatch({
-    pos_data <- pos_data <- get_positioning(
+    pos_data <- get_positioning(
       include_depositors = TRUE,
       include_flows = TRUE,
       top_n_vaults = 5,
@@ -339,16 +375,12 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     if (is.list(pos_data) && !is.character(pos_data)) {
       framework$raw_data$positioning <- pos_data
 
-      # Fix HHI scaling (ensure it's on 0-10,000 scale)
       hhi_value <- if (!is.null(pos_data$raw_positioning_data$whale_concentration)) {
         pos_data$raw_positioning_data$whale_concentration$hhi
       } else {
         0
       }
 
-      #-------------------------------------------------------------------------
-      # BASIC POSITIONING SIGNALS
-      #-------------------------------------------------------------------------
       framework$signals$positioning <- list(
         whale_flow = pos_data$exchange_positioning$flow_regime %||% "Unknown",
         whale_activity = pos_data$whale_activity$whale_signal %||% "Unknown",
@@ -365,16 +397,10 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
         )
       )
 
-      #-------------------------------------------------------------------------
-      # MORPHO-SPECIFIC INTELLIGENCE
-      #-------------------------------------------------------------------------
       if (!is.null(pos_data$raw_positioning_data)) {
         morpho <- pos_data$raw_positioning_data
 
-        # Whale concentration metrics with corrected HHI
         if (!is.null(morpho$whale_concentration)) {
-
-          # Calculate top 5 share safely
           top_5_share <- morpho$whale_concentration$top_5_share %||% 0
 
           framework$signals$positioning$whale_concentration <- list(
@@ -389,16 +415,12 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
               TRUE ~ "Competitive"
             ),
             top_5_share = top_5_share,
-
-            # Risk classification
             concentration_risk = dplyr::case_when(
               hhi_value > 2500 ~ "🔴 CRITICAL",
               hhi_value > 1500 ~ "🟠 HIGH",
               hhi_value > 1000 ~ "🟡 MEDIUM",
               TRUE ~ "🟢 LOW"
             ),
-
-            # Systemic risk flag
             systemic_risk = ifelse(
               top_5_share > 50,
               "⚠️ High systemic risk - top 5 whales control majority",
@@ -407,7 +429,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
           )
         }
 
-        # Vault flow analysis
         if (!is.null(morpho$vault_flows) && !is.null(morpho$flow_summary)) {
           framework$signals$positioning$vault_flows <- list(
             transactions = sum(morpho$vault_flows$tx_count %||% 0),
@@ -461,13 +482,12 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     if (!is.null(fgi_data)) {
       framework$raw_data$sentiment <- fgi_data
 
-      # Use consistent emoji: Extreme fear = 🟢 (bullish contrarian)
       sentiment_emoji <- dplyr::case_when(
-        fgi_data$current_value <= 25 ~ "🟢",  # Extreme fear = bullish contrarian
+        fgi_data$current_value <= 25 ~ "🟢",
         fgi_data$current_value <= 45 ~ "🟡",
         fgi_data$current_value <= 55 ~ "⚪",
         fgi_data$current_value <= 75 ~ "🟠",
-        TRUE ~ "🔴"  # Extreme greed = bearish contrarian
+        TRUE ~ "🔴"
       )
 
       framework$signals$sentiment <- list(
@@ -502,7 +522,7 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   })
 
   #---------------------------------------------------------------------------
-  # RISK-OFF SIGNALS (Enhanced with Morpho intelligence and sentiment)
+  # RISK-OFF SIGNALS
   #---------------------------------------------------------------------------
   if (verbose) message("🔍 Calculating risk-off signals...")
 
@@ -547,9 +567,9 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
       risk_scores$macro <- 3
     }
     if (framework$signals$macro$composite_risk > 0.3) {
-      risk_scores$macro <- 1  # Bullish macro reduces risk
+      risk_scores$macro <- 1
     } else {
-      risk_scores$macro <- risk_scores$macro %||% 2  # Default if not set
+      risk_scores$macro <- risk_scores$macro %||% 2
     }
   }
 
@@ -564,14 +584,13 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     risk_scores$derivatives <- 2
   } else if (!is.null(framework$signals$derivatives$crowded_short) &&
              framework$signals$derivatives$crowded_short) {
-    # Crowded short can be bullish (contrarian)
     risk_factors <- c(risk_factors, "Extremely crowded short positioning (bullish setup)")
     risk_scores$derivatives <- 1
   } else {
     risk_scores$derivatives <- 1
   }
 
-  # Whale concentration check (Morpho intelligence)
+  # Whale concentration check
   if (!is.null(framework$signals$positioning$whale_concentration)) {
     wc <- framework$signals$positioning$whale_concentration
 
@@ -611,12 +630,11 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     }
   }
 
-  # Fear & Greed sentiment check (contrarian)
+  # Fear & Greed sentiment check
   if (!is.null(framework$signals$sentiment)) {
     fg_value <- framework$signals$sentiment$value
 
     if (fg_value >= 75) {
-      # Extreme greed - bearish signal
       if (risk_level != "HIGH") {
         risk_level <- "MEDIUM"
         risk_color <- "YELLOW"
@@ -624,9 +642,8 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
       risk_factors <- c(risk_factors, paste("Extreme greed -", fg_value, "/100 (bearish)"))
       risk_scores$sentiment <- 2
     } else if (fg_value <= 25) {
-      # Extreme fear - bullish contrarian (reduces risk)
       risk_factors <- c(risk_factors, paste("Extreme fear -", fg_value, "/100 (bullish contrarian)"))
-      risk_scores$sentiment <- 0  # Reduces overall risk
+      risk_scores$sentiment <- 0
     } else {
       risk_scores$sentiment <- 1
     }
@@ -639,12 +656,12 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     }
   }
 
-  # Calculate composite risk score (weighted average)
+  # Calculate composite risk score
   valid_scores <- unlist(risk_scores[!sapply(risk_scores, is.null)])
   if (length(valid_scores) > 0) {
-    composite_risk_score <- mean(valid_scores, na.rm = TRUE) / 3  # Scale to 0-1
+    composite_risk_score <- mean(valid_scores, na.rm = TRUE) / 3
   } else {
-    composite_risk_score <- 0.5  # Default neutral
+    composite_risk_score <- 0.5
   }
 
   actions <- list(
@@ -663,7 +680,7 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   )
 
   #---------------------------------------------------------------------------
-  # SHORT-TERM DECISIONS (hours to days)
+  # SHORT-TERM DECISIONS
   #---------------------------------------------------------------------------
   if (verbose) message("🎯 Generating short-term decisions...")
 
@@ -683,7 +700,7 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
       momentum_score <- momentum_score - 1
       momentum_factors$derivatives <- -1
     } else if (funding_regime == "Extreme Long") {
-      momentum_score <- momentum_score - 1  # Crowded long is bearish short-term
+      momentum_score <- momentum_score - 1
       momentum_factors$derivatives <- -1
     } else {
       momentum_factors$derivatives <- 0
@@ -704,23 +721,22 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     }
   }
 
-  # Sentiment contribution (short-term)
+  # Sentiment contribution
   if (!is.null(framework$signals$sentiment)) {
     fg_value <- framework$signals$sentiment$value
     if (fg_value <= 25) {
-      momentum_score <- momentum_score + 1  # Extreme fear = buy signal
+      momentum_score <- momentum_score + 1
       momentum_factors$sentiment <- 1
     } else if (fg_value >= 75) {
-      momentum_score <- momentum_score - 1  # Extreme greed = sell signal
+      momentum_score <- momentum_score - 1
       momentum_factors$sentiment <- -1
     } else {
       momentum_factors$sentiment <- 0
     }
   }
 
-  # Apply risk override if enabled
+  # Apply risk override
   if (risk_override && risk_level == "HIGH") {
-    # Override short-term signals in high risk
     framework$decisions$short_term$momentum <- list(
       score = momentum_score,
       raw_score = momentum_score,
@@ -763,7 +779,7 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   )
 
   #---------------------------------------------------------------------------
-  # MEDIUM-TERM DECISIONS (weeks to months)
+  # MEDIUM-TERM DECISIONS
   #---------------------------------------------------------------------------
   if (verbose) message("🎯 Generating medium-term decisions...")
 
@@ -795,7 +811,7 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     trend_factors$macro <- macro_contrib
   }
 
-  # Whale flow contribution (Morpho vault flows)
+  # Whale flow contribution
   if (!is.null(framework$signals$positioning$vault_flows)) {
     net_flow_pct <- framework$signals$positioning$vault_flows$net_flow_pct
     if (!is.na(net_flow_pct)) {
@@ -813,11 +829,11 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     }
   }
 
-  # Whale concentration impact (systemic risk)
+  # Whale concentration impact
   if (!is.null(framework$signals$positioning$whale_concentration)) {
     wc <- framework$signals$positioning$whale_concentration
     if (wc$hhi > 2500) {
-      trend_score <- trend_score - 1  # High concentration is bearish
+      trend_score <- trend_score - 1
       trend_factors$concentration <- -1
     } else if (wc$hhi > 1500) {
       trend_score <- trend_score - 0.5
@@ -827,9 +843,8 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     }
   }
 
-  # Apply risk override if enabled
+  # Apply risk override
   if (risk_override && risk_level == "HIGH") {
-    # In high risk, medium-term signals are downgraded
     framework$decisions$medium_term$trend <- list(
       score = trend_score,
       raw_score = trend_score,
@@ -844,13 +859,10 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
         TRUE ~ "Neutral"
       )
     )
-
-    # Override allocation in high risk
-    allocation <- 15  # Minimal allocation
-    risk_per_trade <- 0.5  # Tiny risk
+    allocation <- 15
+    risk_per_trade <- 0.5
 
   } else if (risk_override && risk_level == "MEDIUM") {
-    # In medium risk, reduce allocation
     if (trend_score >= 2) {
       allocation <- 50
     } else if (trend_score >= 1) {
@@ -879,7 +891,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     )
 
   } else {
-    # Normal risk - full signals
     framework$decisions$medium_term$trend <- list(
       score = trend_score,
       direction = dplyr::case_when(
@@ -893,7 +904,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
       risk_overridden = FALSE
     )
 
-    # Normal allocation
     if (trend_score >= 2) {
       allocation <- 75
     } else if (trend_score >= 1) {
@@ -908,7 +918,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     risk_per_trade <- ifelse(allocation > 60, 1.0, 1.5)
   }
 
-  # Valuation composite
   framework$decisions$medium_term$valuation <- list(
     composite = if (!is.null(framework$signals$onchain$composite)) {
       framework$signals$onchain$composite
@@ -917,7 +926,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     }
   )
 
-  # Position sizing
   framework$decisions$medium_term$position_sizing <- list(
     recommended_allocation_pct = allocation,
     risk_per_trade_pct = risk_per_trade,
@@ -925,13 +933,12 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   )
 
   #---------------------------------------------------------------------------
-  # LONG-TERM DECISIONS (months to years)
+  # LONG-TERM DECISIONS
   #---------------------------------------------------------------------------
   if (verbose) message("🎯 Generating long-term decisions...")
 
   framework$decisions$long_term <- list()
 
-  # Cycle positioning
   framework$decisions$long_term$cycle <- list(
     mvrv_phase = if (!is.null(framework$signals$onchain$mvrv$regime)) {
       framework$signals$onchain$mvrv$regime
@@ -950,7 +957,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     mvrv_proximity = framework$signals$onchain$mvrv$proximity_warnings
   )
 
-  # Halving impact
   current_year <- as.numeric(format(Sys.Date(), "%Y"))
   years_since_halving <- current_year %% 4
 
@@ -963,9 +969,7 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     )
   )
 
-  # Strategic allocation with risk override
   if (risk_override && risk_level == "HIGH") {
-    # In high risk, even long-term should be cautious
     core_position <- "Defensive - Accumulate only on severe dips"
   } else {
     core_position <- ifelse(
@@ -991,7 +995,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   regime <- "Neutral"
   regime_confidence <- "Medium"
 
-  # Determine regime with confidence
   bull_signals <- 0
   bear_signals <- 0
 
@@ -1041,7 +1044,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     regime_confidence <- "Medium"
   }
 
-  # Override regime if risk is extreme
   if (risk_override && risk_level == "HIGH" && regime %in% c("Bull", "Neutral")) {
     regime <- "Defensive"
     regime_confidence <- "High (Risk Override)"
@@ -1064,11 +1066,10 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   )
 
   #---------------------------------------------------------------------------
-  # ACTIONABLE SUMMARY (Enhanced with Morpho insights and sentiment)
+  # ACTIONABLE SUMMARY
   #---------------------------------------------------------------------------
   if (verbose) message("📝 Generating actionable summary...")
 
-  # Start with risk as the primary message
   if (risk_level == "HIGH") {
     summary_lines <- c(
       paste0("🔴 RISK: ", risk_color, " - URGENT: ", actions[[risk_level]][1]),
@@ -1081,7 +1082,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     )
   }
 
-  # Add regime and strategy
   summary_lines <- c(
     summary_lines,
     paste0("REGIME: ", regime, " (", regime_confidence, " confidence)"),
@@ -1089,7 +1089,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     paste0("ALLOCATION: ", framework$decisions$regime_allocation$allocation$strategic)
   )
 
-  # Add key signals with emojis
   if (!is.null(framework$signals$sentiment)) {
     summary_lines <- c(
       summary_lines,
@@ -1100,7 +1099,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     )
   }
 
-  # Add whale concentration
   if (!is.null(framework$signals$positioning$whale_concentration)) {
     summary_lines <- c(
       summary_lines,
@@ -1110,7 +1108,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     )
   }
 
-  # Add vault flows
   if (!is.null(framework$signals$positioning$vault_flows)) {
     net_flow_pct <- framework$signals$positioning$vault_flows$net_flow_pct
     if (!is.na(net_flow_pct)) {
@@ -1124,7 +1121,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     }
   }
 
-  # Add MVRV with proximity warning
   if (!is.null(framework$signals$onchain$mvrv$proximity_warnings)) {
     summary_lines <- c(
       summary_lines,
@@ -1133,7 +1129,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     )
   }
 
-  # Add derivatives data quality note
   if (!is.null(framework$signals$derivatives$percentile_confidence) &&
       framework$signals$derivatives$percentile_confidence != "High") {
     summary_lines <- c(
@@ -1144,7 +1139,6 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     )
   }
 
-  # Add time horizon signals (with risk override context)
   st_signal <- if (risk_override && risk_level == "HIGH") {
     "RISK-OFF"
   } else {
@@ -1184,12 +1178,10 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
     risk_override_applied = risk_override && risk_level %in% c("MEDIUM", "HIGH")
   )
 
-  # Update metadata
   framework$metadata$status <- "success"
   framework$metadata$warning_count <- length(framework$metadata$warnings)
   framework$metadata$error_count <- length(framework$metadata$errors)
 
-  # Set class for pretty printing
   class(framework) <- "crypto_framework"
 
   if (verbose) {
@@ -1202,6 +1194,7 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   return(framework)
 }
 
+
 #' Print Comprehensive Crypto Framework Summary
 #'
 #' @description
@@ -1209,22 +1202,25 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
 #' results. The output is designed to be self-explanatory and shareable with team
 #' members, stakeholders, or anyone needing actionable crypto market insights.
 #'
+#' The summary is organized hierarchically, starting with the most critical information
+#' (risk level) and progressing through detailed sections when requested.
+#'
 #' @param x A crypto_framework object returned by \code{\link{crypto_predictive_framework}}
-#' @param detailed Logical. If TRUE, shows all sections. If FALSE, shows condensed summary.
-#'   Default TRUE.
+#' @param detailed Logical. If TRUE, shows all sections with explanatory notes.
+#'   If FALSE, shows condensed summary. Default TRUE.
 #'
 #' @return None. Prints formatted summary to console.
-#' @export
 #'
 #' @examples
 #' \dontrun{
 #' result <- crypto_predictive_framework()
 #' print_crypto_summary(result)
-#' print_crypto_summary(result, detailed = FALSE)  # Quick view
+#' print_crypto_summary(result, detailed = FALSE)
 #' }
+#'
+#' @export
 print_crypto_summary <- function(x, detailed = TRUE) {
 
-  # Helper function to safely format dates
   safe_format_date <- function(date_val) {
     tryCatch({
       if (inherits(date_val, "Date")) {
@@ -1240,7 +1236,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
     })
   }
 
-  # Helper function to safely extract values
   safe_extract <- function(lst, path, default = "N/A") {
     tryCatch({
       value <- lst
@@ -1264,19 +1259,16 @@ print_crypto_summary <- function(x, detailed = TRUE) {
     })
   }
 
-  # Helper function to safely check if value exists and is not NULL/NA
   safe_exists <- function(x) {
     !is.null(x) && length(x) > 0 && !all(is.na(x))
   }
 
-  # Helper function to add explanatory notes (only in detailed mode)
   add_explanation <- function(text, explanation, detailed) {
     if (detailed) {
       cat("  📝 ", explanation, "\n")
     }
   }
 
-  # Helper function to print a separator line
   print_sep <- function(char = "━", length = 80) {
     cat("\n", paste(rep(char, length), collapse = ""), "\n")
   }
@@ -1286,11 +1278,9 @@ print_crypto_summary <- function(x, detailed = TRUE) {
   cat("🚀 CRYPTO PREDICTIVE FRAMEWORK - COMPREHENSIVE SUMMARY\n")
   cat(paste(rep("=", 80), collapse = ""), "\n")
 
-  # Safe metadata extraction - FIX: Handle date conversion properly
   cat("Generated:", format(x$metadata$timestamp, "%Y-%m-%d %H:%M:%S"), "\n")
   cat("Asset:", paste(x$metadata$assets, collapse = ", "), "\n")
 
-  # FIX: Handle end_date which appears to be numeric (20521) in your output
   end_date_display <- tryCatch({
     if (is.numeric(x$metadata$end_date)) {
       as.character(as.Date(x$metadata$end_date, origin = "1970-01-01"))
@@ -1304,23 +1294,19 @@ print_crypto_summary <- function(x, detailed = TRUE) {
   cat("Data Range:", x$metadata$start_date, "to", end_date_display, "\n")
   cat("Status:", toupper(x$metadata$status), "\n")
 
-  # Risk override status
   if (!is.null(x$metadata$risk_override) && x$metadata$risk_override) {
     cat("Risk Override: ACTIVE - Risk level overrides conflicting signals\n")
   }
 
-  # Data source info
   if (!is.null(x$signals$positioning$data_source)) {
     cat("Positioning Source:", x$signals$positioning$data_source, "\n")
   }
 
-  # Warnings
   if (length(x$metadata$warnings) > 0) {
     cat("\n⚠️  WARNINGS:\n")
     for (w in x$metadata$warnings) cat("  •", w, "\n")
   }
 
-  # Errors
   if (length(x$metadata$errors) > 0) {
     cat("\n❌ ERRORS:\n")
     for (e in x$metadata$errors) cat("  •", e, "\n")
@@ -1328,9 +1314,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
 
   if (x$metadata$status == "success") {
 
-    #-------------------------------------------------------------------------
-    # RISK-OFF SIGNAL (Most Important - Shown First)
-    #-------------------------------------------------------------------------
     print_sep()
     risk_color <- x$decisions$risk_off$color %||% "UNKNOWN"
     risk_emoji <- ifelse(risk_color == "GREEN", "🟢",
@@ -1338,7 +1321,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
                                 ifelse(risk_color == "RED", "🔴", "⚪")))
     cat(risk_emoji, " RISK-OFF SIGNAL: [", risk_color, "] ", risk_emoji, "\n")
 
-    # Show composite risk score
     if (!is.null(x$decisions$risk_off$composite_score)) {
       cat("   Composite Risk Score: ", round(x$decisions$risk_off$composite_score, 2),
           " (0-1 scale, higher = more risk)\n")
@@ -1346,7 +1328,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
     print_sep()
 
     if (detailed) {
-      # Explanation of risk levels
       cat("  What this means:\n")
       if (risk_color == "GREEN") {
         cat("  • ✅ Normal market conditions - no unusual risks detected\n")
@@ -1377,12 +1358,8 @@ print_crypto_summary <- function(x, detailed = TRUE) {
       }
     }
 
-    # Only show detailed sections if requested
     if (detailed) {
 
-      #-------------------------------------------------------------------------
-      # ON-CHAIN INDICATORS (Fundamental Valuation)
-      #-------------------------------------------------------------------------
       print_sep()
       cat("⛓️  ON-CHAIN INDICATORS\n")
       print_sep()
@@ -1392,7 +1369,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
       if (!is.null(x$signals$onchain)) {
         oc <- x$signals$onchain
 
-        # MVRV
         if (!is.null(oc$mvrv)) {
           mvrv_emoji <- ifelse(grepl("Buy|Accumulate", oc$mvrv$signal), "🟢",
                                ifelse(grepl("Sell|Reduce", oc$mvrv$signal), "🔴", "🟡"))
@@ -1400,7 +1376,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
               " [", oc$mvrv$regime, "]\n", sep = "")
           cat("     Signal: ", oc$mvrv$signal, "\n")
 
-          # Show proximity warnings if any
           if (!is.null(oc$mvrv$proximity_warnings) && length(oc$mvrv$proximity_warnings) > 0) {
             for (warning in oc$mvrv$proximity_warnings) {
               cat("     ⚠️ ", warning, "\n")
@@ -1410,7 +1385,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
           add_explanation("MVRV", "Compares current price to average purchase price of all coins. <0.7 = extreme bottom, >1.75 = extreme top.", detailed)
         }
 
-        # NVT
         if (!is.null(oc$nvt) && safe_exists(oc$nvt$value)) {
           nvt_emoji <- ifelse(oc$nvt$regime == "Undervalued", "🟢",
                               ifelse(oc$nvt$regime == "Overvalued", "🔴", "🟡"))
@@ -1419,7 +1393,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
           add_explanation("NVT", "Like P/E ratio for stocks. Low = network usage high relative to value, High = value exceeds network usage.", detailed)
         }
 
-        # Puell Multiple
         if (!is.null(oc$puell) && safe_exists(oc$puell$value) && !is.na(oc$puell$value)) {
           puell_emoji <- ifelse(grepl("Capitulation", oc$puell$regime), "🟢",
                                 ifelse(grepl("Selling", oc$puell$regime), "🔴", "🟡"))
@@ -1428,7 +1401,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
           add_explanation("Puell", "Measures miner profitability. Low = miners selling at a loss (capitulation), High = miners exceptionally profitable (selling pressure).", detailed)
         }
 
-        # Composite
         if (!is.null(oc$composite)) {
           composite_emoji <- ifelse(oc$composite == "Strong Buy", "🟢🟢",
                                     ifelse(oc$composite == "Strong Sell", "🔴🔴", "🟡"))
@@ -1437,9 +1409,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
         }
       }
 
-      #-------------------------------------------------------------------------
-      # DERIVATIVES INDICATORS (Market Positioning) - FIX: Handle empty case
-      #-------------------------------------------------------------------------
       print_sep()
       cat("📈 DERIVATIVES INDICATORS\n")
       print_sep()
@@ -1449,13 +1418,11 @@ print_crypto_summary <- function(x, detailed = TRUE) {
       if (!is.null(x$signals$derivatives) && length(x$signals$derivatives) > 0) {
         d <- x$signals$derivatives
 
-        # Check if we have actual data
         if (safe_exists(d$funding_regime) && d$funding_regime != "Unknown") {
           funding_emoji <- ifelse(d$funding_regime %in% c("Bullish", "Neutral"), "🟢",
                                   ifelse(d$funding_regime %in% c("Bearish"), "🟡", "🔴"))
           cat(funding_emoji, " Funding Regime: ", d$funding_regime, "\n")
 
-          # Show data quality
           if (!is.null(d$n_observations) && d$n_observations > 0) {
             cat("  • Data Quality: ", d$n_observations, " days (",
                 d$percentile_confidence %||% "Unknown", " confidence)\n", sep = "")
@@ -1491,9 +1458,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
         cat("  Check API connections or try again later.\n")
       }
 
-      #-------------------------------------------------------------------------
-      # MACRO INDICATORS (Global Economic Context)
-      #-------------------------------------------------------------------------
       print_sep()
       cat("🌎 MACRO INDICATORS\n")
       print_sep()
@@ -1503,7 +1467,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
       if (!is.null(x$signals$macro)) {
         m <- x$signals$macro
 
-        # Show data availability
         if (!is.null(m$data_quality)) {
           missing <- c()
           if (!isTRUE(m$data_quality$m2_available)) missing <- c(missing, "M2")
@@ -1544,9 +1507,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
         }
       }
 
-      #-------------------------------------------------------------------------
-      # VOLATILITY INDICATORS (Market Conditions)
-      #-------------------------------------------------------------------------
       print_sep()
       cat("📊 VOLATILITY INDICATORS\n")
       print_sep()
@@ -1578,9 +1538,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
         }
       }
 
-      #-------------------------------------------------------------------------
-      # POSITIONING INDICATORS (DeFi Positioning)
-      #-------------------------------------------------------------------------
       if (!is.null(x$signals$positioning)) {
         print_sep()
         cat("🐋 DEFI POSITIONING\n")
@@ -1588,12 +1545,10 @@ print_crypto_summary <- function(x, detailed = TRUE) {
 
         p <- x$signals$positioning
 
-        # Show data source
         if (!is.null(p$data_source)) {
           cat("  Data Source:", p$data_source, "\n\n")
         }
 
-        # Basic flow regime
         if (!is.null(p$whale_flow) && p$whale_flow != "Unknown") {
           flow_emoji <- ifelse(grepl("Inflows", p$whale_flow), "📥",
                                ifelse(grepl("Outflows", p$whale_flow), "📤", "⚖️"))
@@ -1607,7 +1562,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
           }
         }
 
-        # MORPHO-SPECIFIC INTELLIGENCE
         if (!is.null(p$whale_concentration)) {
           wc <- p$whale_concentration
           cat("\n  🐋 WHALE CONCENTRATION ANALYSIS\n")
@@ -1654,9 +1608,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
         }
       }
 
-      #-------------------------------------------------------------------------
-      # FEAR & GREED SENTIMENT
-      #-------------------------------------------------------------------------
       if (!is.null(x$signals$sentiment)) {
         print_sep()
         cat("📈 MARKET SENTIMENT\n")
@@ -1674,11 +1625,8 @@ print_crypto_summary <- function(x, detailed = TRUE) {
         }
         add_explanation("Fear & Greed", "Contrarian indicator: Extreme fear (<25) can signal bottoms, extreme greed (>75) can signal tops.", detailed)
       }
-    } # End detailed sections
+    }
 
-    #-------------------------------------------------------------------------
-    # DECISION FRAMEWORK BY TIME HORIZON (Always show, but with risk context)
-    #-------------------------------------------------------------------------
     print_sep()
     cat("⏱️  DECISION FRAMEWORK BY TIME HORIZON\n")
     print_sep()
@@ -1687,7 +1635,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
       cat("  ⚠️ RISK OVERRIDE ACTIVE - Signals below reflect current risk level\n\n")
     }
 
-    # Short-term
     if (!is.null(x$decisions$short_term)) {
       st <- x$decisions$short_term
 
@@ -1722,15 +1669,12 @@ print_crypto_summary <- function(x, detailed = TRUE) {
       }
     }
 
-    # Medium-term - FIX: Handle the error with proper null checking
     if (!is.null(x$decisions$medium_term)) {
       mt <- x$decisions$medium_term
 
       cat("\n")
 
-      # FIX: Check if trend exists and has risk_overridden flag
       if (!is.null(mt$trend) && !is.null(mt$trend$risk_overridden) && mt$trend$risk_overridden) {
-        # Safely check risk_level
         risk_level_display <- if (!is.null(mt$trend$risk_level)) mt$trend$risk_level else "HIGH"
 
         if (risk_level_display == "HIGH") {
@@ -1785,7 +1729,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
       }
     }
 
-    # Long-term
     if (!is.null(x$decisions$long_term)) {
       lt <- x$decisions$long_term
 
@@ -1807,7 +1750,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
       if (!is.null(lt$cycle)) {
         cat("  • Cycle: ", lt$cycle$interpretation %||% "Mid-cycle", "\n")
 
-        # Show proximity warnings if any
         if (!is.null(lt$cycle$mvrv_proximity) && length(lt$cycle$mvrv_proximity) > 0) {
           for (warning in lt$cycle$mvrv_proximity) {
             cat("  • ⚠️ ", warning, "\n")
@@ -1820,9 +1762,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
       }
     }
 
-    #-------------------------------------------------------------------------
-    # REGIME ALLOCATION (Current Market Type)
-    #-------------------------------------------------------------------------
     print_sep()
     cat("🎯 REGIME ALLOCATION\n")
     print_sep()
@@ -1849,9 +1788,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
       }
     }
 
-    #-------------------------------------------------------------------------
-    # ACTIONABLE SUMMARY (Bottom Line - Always show)
-    #-------------------------------------------------------------------------
     print_sep()
     cat("✅ ACTIONABLE SUMMARY\n")
     print_sep()
@@ -1859,7 +1795,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
 
     if (!is.null(x$summary$bullet_points) && length(x$summary$bullet_points) > 0) {
       for (bullet in x$summary$bullet_points) {
-        # Add appropriate indentation
         if (grepl("^→", bullet)) {
           cat("    ", bullet, "\n")
         } else {
@@ -1870,15 +1805,12 @@ print_crypto_summary <- function(x, detailed = TRUE) {
       cat("  • No summary bullets available\n")
     }
 
-    # Quick reference table (Always show)
     print_sep()
     cat("📋 QUICK REFERENCE\n")
     print_sep()
 
-    # Build quick reference based on available data
     quick_ref_data <- list()
 
-    # Risk
     if (!is.null(x$summary$risk)) {
       risk_display <- paste0(x$summary$risk$color %||% "UNKNOWN")
       if (!is.null(x$summary$risk$composite_score)) {
@@ -1888,7 +1820,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
       quick_ref_data$Value <- c(quick_ref_data$Value, risk_display)
     }
 
-    # Regime
     if (!is.null(x$summary$regime)) {
       regime_display <- x$summary$regime$name %||% "Unknown"
       if (!is.null(x$summary$regime$confidence)) {
@@ -1898,38 +1829,32 @@ print_crypto_summary <- function(x, detailed = TRUE) {
       quick_ref_data$Value <- c(quick_ref_data$Value, regime_display)
     }
 
-    # Short-term
     if (!is.null(x$summary$short_term)) {
       quick_ref_data$Metric <- c(quick_ref_data$Metric, "Short-term")
       quick_ref_data$Value <- c(quick_ref_data$Value, x$summary$short_term)
     }
 
-    # Medium-term
     if (!is.null(x$summary$medium_term)) {
       quick_ref_data$Metric <- c(quick_ref_data$Metric, "Medium-term")
       quick_ref_data$Value <- c(quick_ref_data$Value, x$summary$medium_term)
     }
 
-    # Long-term
     if (!is.null(x$summary$long_term)) {
       quick_ref_data$Metric <- c(quick_ref_data$Metric, "Long-term")
       quick_ref_data$Value <- c(quick_ref_data$Value, x$summary$long_term)
     }
 
-    # Sentiment
     if (!is.null(x$signals$sentiment)) {
       sent_display <- paste0(x$signals$sentiment$value, "/100 - ", x$signals$sentiment$classification)
       quick_ref_data$Metric <- c(quick_ref_data$Metric, "Sentiment")
       quick_ref_data$Value <- c(quick_ref_data$Value, sent_display)
     }
 
-    # Allocation
     if (!is.null(x$summary$allocation)) {
       quick_ref_data$Metric <- c(quick_ref_data$Metric, "Allocation")
       quick_ref_data$Value <- c(quick_ref_data$Value, x$summary$allocation)
     }
 
-    # Create and print data frame if we have data
     if (length(quick_ref_data) > 0) {
       quick_ref <- data.frame(
         Metric = quick_ref_data$Metric,
@@ -1942,7 +1867,6 @@ print_crypto_summary <- function(x, detailed = TRUE) {
 
   cat("\n", paste(rep("=", 80), collapse = ""), "\n")
 
-  # Show how to get more detail if in condensed mode
   if (!detailed) {
     cat("👉 For detailed analysis with explanations, use print_crypto_summary(result, detailed = TRUE)\n")
   } else {

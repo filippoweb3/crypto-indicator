@@ -31,6 +31,8 @@ Common chain identifiers:
   \item{137}{: Polygon}
   \item{42161}{: Arbitrum}
   \item{10}{: Optimism}
+  \item{43114}{: Avalanche}
+  \item{100}{: Gnosis}
 }
 }
 

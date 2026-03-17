@@ -13,15 +13,24 @@ get_vault_v1_transactions(vault_address, first = 10, skip = 0, chain_id = NULL)
 
 \item{skip}{Integer. Number of transactions to skip for pagination (default: 0)}
 
-\item{chain_id}{Integer. Chain ID (kept for compatibility but not used in V1 - see note)}
+\item{chain_id}{Integer. Chain ID (kept for interface compatibility with V2 functions)}
 }
 \value{
-A tibble with transaction data
+A tibble with transaction data containing:
+  \itemize{
+    \item \code{tx_hash}: Transaction hash
+    \item \code{timestamp}: Transaction timestamp
+    \item \code{type}: Transaction type (Deposit, Withdraw, etc.)
+    \item \code{user_address}: Address of the transaction initiator
+    \item \code{shares}: Number of shares involved
+    \item \code{assets}: Amount of underlying assets
+  }
 }
 \description{
 Retrieves recent transactions involving a Vault V1, including deposits,
-withdrawals, fee collections, and other vault operations.
+withdrawals, fee collections, and other vault operations. This provides
+visibility into capital flows and whale activity.
 }
 \note{
-The chain_id parameter is not used in the V1 API but is kept for interface consistency with V2 functions.
+The chain_id parameter is not used in the V1 API but is kept for interface consistency.
 }
