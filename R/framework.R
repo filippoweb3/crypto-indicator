@@ -329,7 +329,12 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
   if (verbose) message("🐋 Fetching Morpho vault positioning data...")
 
   tryCatch({
-    pos_data <- get_positioning()
+    pos_data <- pos_data <- get_positioning(
+      include_depositors = TRUE,
+      include_flows = TRUE,
+      top_n_vaults = 5,
+      max_depositors_per_vault = 10
+    )
 
     if (is.list(pos_data) && !is.character(pos_data)) {
       framework$raw_data$positioning <- pos_data
