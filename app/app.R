@@ -6,6 +6,7 @@ library(CryptoIndicator)
 library(ggplot2)
 library(dplyr)
 library(shinythemes)
+library(zoo)
 
 # ======================================
 # LOAD BUILT-IN DEMO DATA
@@ -159,17 +160,11 @@ ui <- fluidPage(
             # API Keys Section - Manual Input
             h5("🔑 API Keys (Optional)", style = "color: #3498db;"),
 
-            # FRED API Key manual input
+            # FRED API Key manual input (Whale Alert removed)
             textInput("fred_api_key",
                       "FRED API Key:",
                       value = "",
                       placeholder = "Enter your FRED API key"),
-
-            # Whale Alert API Key manual input
-            textInput("whale_api_key",
-                      "Whale Alert API Key:",
-                      value = "",
-                      placeholder = "Enter your Whale Alert API key"),
 
             tags$small(class = "text-muted",
                        "API keys are optional. Leave blank to run without them."),
@@ -281,7 +276,7 @@ ui <- fluidPage(
                  h4("M2 Money Supply Growth"),
                  plotOutput("m2_plot", height = "250px"),
                  br(),
-                 h4("US Dollar Index (DXY)"),
+                 h4("US Dollar Index (FRED)"),
                  plotOutput("dxy_plot", height = "250px"),
                  br(),
                  h4("Composite Risk Score"),
@@ -291,14 +286,17 @@ ui <- fluidPage(
 
         tabPanel("Positioning",
                  br(),
-                 h4("Whale Flow"),
-                 plotOutput("whale_plot", height = "150px"),
+                 h4("Whale Flows"),
+                 plotOutput("whale_flow_plot", height = "200px"),
                  br(),
-                 h4("Google Trends Sentiment"),
+                 h4("Whale Concentration"),
+                 plotOutput("whale_concentration_plot", height = "250px"),
+                 br(),
+                 h4("Top Whales"),
+                 tableOutput("whale_table"),
+                 br(),
+                 h4("Fear & Greed Sentiment"),
                  plotOutput("sentiment_plot", height = "250px"),
-                 br(),
-                 h4("Sentiment History"),
-                 plotOutput("sentiment_history_plot", height = "250px"),
                  br(),
                  tableOutput("positioning_table"))
       )
@@ -345,7 +343,7 @@ server <- function(input, output, session) {
   })
 
   # ======================================
-  # LIVE MODE HANDLER
+  # LIVE MODE HANDLER (Whale Alert removed)
   # ======================================
   observeEvent(input$run_live, {
 
@@ -356,9 +354,8 @@ server <- function(input, output, session) {
       res <- crypto_predictive_framework(
         assets = input$asset,
         start_date = as.character(input$dates[1]),
-        include_google_trends = TRUE,
         fred_api_key = if(input$fred_api_key != "") input$fred_api_key else NULL,
-        whale_api_key = if(input$whale_api_key != "") input$whale_api_key else NULL
+        verbose = TRUE
       )
 
       results(res)
@@ -372,12 +369,6 @@ server <- function(input, output, session) {
       if (grepl("FRED", e$message)) {
         showNotification(
           "FRED API key issue. Check your key and try again.",
-          type = "error",
-          duration = 8
-        )
-      } else if (grepl("Whale", e$message)) {
-        showNotification(
-          "Whale Alert API key issue. Check your key and try again.",
           type = "error",
           duration = 8
         )
@@ -417,9 +408,9 @@ server <- function(input, output, session) {
   output$risk_box <- renderUI({
     req(results())
 
-    risk_color <- results()$decisions$risk_off$color
-    risk_level <- results()$decisions$risk_off$level
-    risk_factors <- paste(results()$decisions$risk_off$factors, collapse = " • ")
+    risk_color <- results()$summary$risk$color
+    risk_level <- results()$summary$risk$level
+    risk_factors <- paste(results()$summary$risk$factors, collapse = " • ")
 
     div(class = paste("risk-", risk_color, sep = ""),
         h4(paste("⚠️", risk_color, "-", risk_level)),
@@ -429,33 +420,27 @@ server <- function(input, output, session) {
 
   output$short_term <- renderUI({
     req(results())
-    signal <- results()$decisions$short_term$momentum$signal
-    score <- results()$decisions$short_term$momentum$score
+    signal <- results()$summary$short_term
     div(class = "well text-center",
-        h4(signal),
-        p("Score: ", score)
+        h4(signal)
     )
   })
 
   output$medium_term <- renderUI({
     req(results())
-    signal <- results()$decisions$medium_term$trend$direction
-    score <- results()$decisions$medium_term$trend$score
-    alloc <- results()$decisions$medium_term$position_sizing$recommended_allocation_pct
+    signal <- results()$summary$medium_term
+    alloc <- results()$summary$allocation
     div(class = "well text-center",
         h4(signal),
-        p("Score: ", score),
-        p("Allocation: ", alloc, "%")
+        p("Allocation: ", alloc)
     )
   })
 
   output$long_term <- renderUI({
     req(results())
-    signal <- results()$decisions$long_term$strategic$core_position
-    cycle <- results()$decisions$long_term$cycle$interpretation
+    signal <- results()$summary$long_term
     div(class = "well text-center",
-        h4(signal),
-        p(cycle)
+        h4(signal)
     )
   })
 
@@ -474,7 +459,7 @@ server <- function(input, output, session) {
   }
 
   # ======================================
-  # ALL PLOTTING FUNCTIONS (same as before)
+  # PLOTTING FUNCTIONS
   # ======================================
 
   output$mvrv_plot <- renderPlot({
@@ -557,8 +542,7 @@ server <- function(input, output, session) {
       Regime = c(oc$mvrv$regime,
                  oc$nvt$regime,
                  oc$puell$regime,
-                 oc$composite),
-      Signal = c(oc$mvrv$signal, "-", "-", oc$composite)
+                 oc$composite)
     )
   })
 
@@ -573,6 +557,8 @@ server <- function(input, output, session) {
       date = tail(results()$indicators$onchain$timestamp, last_n),
       regime = tail(vol$regime, last_n)
     )
+
+    regime_data <- regime_data[!is.na(regime_data$regime), ]
 
     ggplot(regime_data, aes(x = date, y = 1, fill = regime)) +
       geom_tile(height = 0.8) +
@@ -600,6 +586,8 @@ server <- function(input, output, session) {
       short_vol = tail(vol$volatility$short, n) * 100,
       medium_vol = tail(vol$volatility$medium, n) * 100
     )
+
+    df <- na.omit(df)
 
     ggplot(df, aes(x = date)) +
       geom_line(aes(y = short_vol, color = "Short-term (7d)"), size = 1) +
@@ -646,23 +634,16 @@ server <- function(input, output, session) {
   output$volatility_table <- renderTable({
     req(results())
     vol_sig <- results()$signals$volatility
-    vol_full <- results()$indicators$volatility
-    last_30 <- tail(vol_full$signals$vol_breakout, 30)
-    breakout_count <- sum(last_30, na.rm = TRUE)
-    compression_count <- sum(tail(vol_full$signals$vol_compression, 30), na.rm = TRUE)
 
     data.frame(
       Metric = c("Current Regime", "Environment", "Strategy",
-                 "7d Percentile", "30d Percentile",
-                 "Breakouts (30d)", "Compressions (30d)"),
+                 "7d Percentile", "30d Percentile"),
       Value = c(
         vol_sig$regime,
         vol_sig$current_regime,
         vol_sig$strategy,
         paste0(round(vol_sig$percentile_short * 100, 1), "%"),
-        paste0(round(vol_sig$percentile_medium * 100, 1), "%"),
-        breakout_count,
-        compression_count
+        paste0(round(vol_sig$percentile_medium * 100, 1), "%")
       )
     )
   })
@@ -724,19 +705,17 @@ server <- function(input, output, session) {
     signals <- results()$signals$derivatives
 
     df <- data.frame(
-      signal = c("Crowded Long", "Crowded Short", "OI Momentum"),
+      signal = c("Crowded Long", "Crowded Short"),
       value = c(ifelse(signals$crowded_long, 1, 0),
-                ifelse(signals$crowded_short, 1, 0),
-                signals$oi_momentum)
+                ifelse(signals$crowded_short, 1, 0))
     )
 
     ggplot(df, aes(x = signal, y = value, fill = signal)) +
       geom_col() +
       scale_fill_manual(values = c("Crowded Long" = "red",
-                                   "Crowded Short" = "green",
-                                   "OI Momentum" = "blue")) +
+                                   "Crowded Short" = "green")) +
       labs(title = "Crowded Trade Signals",
-           x = "", y = "Signal Strength") +
+           x = "", y = "Signal (1 = Active)") +
       theme_minimal() +
       theme(plot.title = element_text(hjust = 0.5),
             legend.position = "none")
@@ -748,13 +727,15 @@ server <- function(input, output, session) {
     if (!is.null(d)) {
       data.frame(
         Metric = c("Funding Regime", "OI Percentile", "Funding Percentile",
-                   "OI Momentum", "Crowded Long", "Crowded Short", "Interpretation"),
+                   "OI Momentum", "Crowded Long", "Crowded Short",
+                   "Data Confidence", "Interpretation"),
         Value = c(d$funding_regime,
                   paste0(round(d$oi_percentile * 100, 1), "%"),
                   paste0(round(d$funding_percentile * 100, 1), "%"),
                   paste0(round(d$oi_momentum * 100, 1), "%"),
                   ifelse(d$crowded_long, "⚠️ Yes", "No"),
                   ifelse(d$crowded_short, "⚠️ Yes", "No"),
+                  paste0(d$percentile_confidence, " (", d$n_observations, " days)"),
                   d$interpretation)
       )
     }
@@ -790,6 +771,7 @@ server <- function(input, output, session) {
       theme(plot.title = element_text(hjust = 0.5))
   })
 
+  # UPDATED: DXY plot with FRED data and correct thresholds
   output$dxy_plot <- renderPlot({
     req(results())
     macro <- results()$raw_data$macro
@@ -797,8 +779,8 @@ server <- function(input, output, session) {
 
     dxy <- macro$dollar$dxy
     dxy_df <- data.frame(
-      date = as.Date(zoo::index(dxy)),
-      dxy = as.numeric(quantmod::Cl(dxy))
+      date = as.Date(dxy$date),
+      dxy = dxy$value
     )
 
     dxy_df <- filter_by_date(dxy_df, "date", input$filter_dates[1], input$filter_dates[2])
@@ -806,11 +788,12 @@ server <- function(input, output, session) {
 
     ggplot(dxy_df, aes(x = date, y = dxy)) +
       geom_line(color = "blue", size = 1) +
-      geom_hline(yintercept = c(90, 100), linetype = "dashed", color = "red") +
+      # Updated thresholds for FRED's DTWEXBGS (110-120 range)
+      geom_hline(yintercept = c(110, 120), linetype = "dashed", color = "red") +
       annotate("rect", xmin = min(dxy_df$date), xmax = max(dxy_df$date),
-               ymin = 90, ymax = 100, alpha = 0.1, fill = "orange") +
-      labs(title = "US Dollar Index (DXY)",
-           x = "Date", y = "DXY") +
+               ymin = 110, ymax = 120, alpha = 0.1, fill = "orange") +
+      labs(title = "US Dollar Index (FRED - DTWEXBGS)",
+           x = "Date", y = "Index Value") +
       theme_minimal() +
       theme(plot.title = element_text(hjust = 0.5))
   })
@@ -855,98 +838,138 @@ server <- function(input, output, session) {
     }
   })
 
-  output$whale_plot <- renderPlot({
+  # NEW: Whale Flow Plot
+  output$whale_flow_plot <- renderPlot({
     req(results())
     pos <- results()$signals$positioning
-    if (is.null(pos)) {
-      df <- data.frame(x = 1, y = 1, label = "No whale data available")
+    if (is.null(pos) || is.null(pos$vault_flows)) {
+      df <- data.frame(x = 1, y = 1, label = "No whale flow data")
       ggplot(df, aes(x = x, y = y)) +
         geom_text(aes(label = label), size = 5) +
-        theme_void() +
-        labs(title = "Whale Flow")
+        theme_void()
     } else {
-      flow_color <- ifelse(grepl("Extreme Inflows", pos$whale_flow), "red",
-                           ifelse(grepl("Inflows", pos$whale_flow), "orange",
-                                  ifelse(grepl("Extreme Outflows", pos$whale_flow), "green",
-                                         ifelse(grepl("Outflows", pos$whale_flow), "lightgreen", "gray"))))
+      flow_color <- ifelse(grepl("Inflows", pos$vault_flows$flow_regime), "green",
+                           ifelse(grepl("Outflows", pos$vault_flows$flow_regime), "red", "gray"))
 
-      netflow <- ifelse(!is.null(results()$raw_data$positioning),
-                        results()$raw_data$positioning$exchange_positioning$netflow_summary$netflow_usd / 1e6,
-                        0)
+      netflow <- pos$vault_flows$net_flow_pct
 
       ggplot() +
-        annotate("rect", xmin = 0, xmax = 1, ymin = 0, ymax = 1,
+        annotate("rect", xmin = 0, xmax = 1, ymin = 0, ymax = 0.4,
                  fill = flow_color, alpha = 0.5) +
+        annotate("text", x = 0.5, y = 0.2,
+                 label = paste("Flow Regime:", pos$vault_flows$flow_regime), size = 5) +
         annotate("text", x = 0.5, y = 0.7,
-                 label = paste("Flow:", pos$whale_flow), size = 4) +
-        annotate("text", x = 0.5, y = 0.4,
-                 label = paste("Net Flow: $", round(netflow, 1), "M"), size = 4) +
-        labs(title = "Whale Positioning") +
+                 label = paste("Net Flow:", round(netflow, 1), "%"), size = 6, fontface = "bold") +
+        labs(title = "Whale Flows") +
         xlim(0, 1) + ylim(0, 1) +
         theme_void() +
         theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
     }
   })
 
-  output$sentiment_plot <- renderPlot({
+  # NEW: Whale Concentration Plot
+  output$whale_concentration_plot <- renderPlot({
     req(results())
     pos <- results()$signals$positioning
-    if (is.null(pos) || is.null(pos$sentiment)) {
-      df <- data.frame(x = 1, y = 1, label = "No Google Trends data")
+    if (is.null(pos) || is.null(pos$whale_concentration)) {
+      df <- data.frame(x = 1, y = 1, label = "No whale concentration data")
       ggplot(df, aes(x = x, y = y)) +
         geom_text(aes(label = label), size = 5) +
-        theme_void() +
-        labs(title = "Retail Sentiment")
+        theme_void()
     } else {
+      wc <- pos$whale_concentration
+
       df <- data.frame(
-        x = c(0, 20, 40, 60, 80, 100),
-        xend = c(20, 40, 60, 80, 100, 120),
-        y = 1, yend = 1,
-        zone = c("Low", "Normal", "Normal", "High", "Extreme", "")
+        category = c("Mega Whales (>$10M)", "Regular Whales ($1M-$10M)",
+                     "Dolphins ($100k-$1M)", "Retail (<$100k)"),
+        count = c(wc$mega_whales, wc$regular_whales, wc$dolphins, wc$retail)
       )
 
-      ggplot() +
-        geom_segment(data = df, aes(x = x, xend = xend, y = y, yend = yend, color = zone),
-                     size = 20, alpha = 0.3) +
-        geom_vline(xintercept = pos$sentiment$score, size = 2, color = "black") +
-        annotate("text", x = pos$sentiment$score, y = 1.5,
-                 label = paste0(round(pos$sentiment$score, 1), "/100"), size = 5) +
-        annotate("text", x = 50, y = 0.5,
-                 label = pos$sentiment$signal, size = 4) +
-        scale_color_manual(values = c("Low" = "green", "Normal" = "yellow",
-                                      "High" = "orange", "Extreme" = "red")) +
-        labs(title = "Google Trends Sentiment") +
-        xlim(0, 100) + ylim(0, 2) +
-        theme_void() +
-        theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+      hhi_color <- ifelse(wc$hhi > 2500, "red",
+                          ifelse(wc$hhi > 1500, "orange", "green"))
+
+      ggplot(df, aes(x = category, y = count, fill = category)) +
+        geom_col() +
+        geom_text(aes(label = count), vjust = -0.5) +
+        annotate("text", x = 2, y = max(df$count) * 1.2,
+                 label = paste("HHI:", round(wc$hhi, 1), "-", wc$hhi_interpretation),
+                 color = hhi_color, size = 5, fontface = "bold") +
+        labs(title = "Whale Concentration",
+             x = "", y = "Count") +
+        theme_minimal() +
+        theme(plot.title = element_text(hjust = 0.5),
+              axis.text.x = element_text(angle = 45, hjust = 1),
               legend.position = "none")
     }
   })
 
-  output$sentiment_history_plot <- renderPlot({
+  # NEW: Whale Table
+  output$whale_table <- renderTable({
     req(results())
-    pos_raw <- results()$raw_data$positioning
-    if (is.null(pos_raw) || is.null(pos_raw$google_trends)) return(NULL)
-
-    trends_data <- pos_raw$google_trends$interest_over_time
-    if (is.null(trends_data)) return(NULL)
-
-    trends_df <- data.frame(
-      date = as.Date(trends_data$date),
-      hits = trends_data$hits
-    )
-
-    trends_df <- filter_by_date(trends_df, "date", input$filter_dates[1], input$filter_dates[2])
-
-    ggplot(trends_df, aes(x = date, y = hits)) +
-      geom_line(color = "orange", size = 1) +
-      geom_hline(yintercept = c(20, 80), linetype = "dashed", color = "red") +
-      labs(title = "Google Trends History",
-           x = "Date", y = "Search Interest (0-100)") +
-      theme_minimal() +
-      theme(plot.title = element_text(hjust = 0.5))
+    pos <- results()$signals$positioning
+    if (!is.null(pos) && !is.null(pos$whale_concentration)) {
+      wc <- pos$whale_concentration
+      data.frame(
+        Metric = c("Total Unique Wallets", "Mega Whales (>$10M)",
+                   "Regular Whales ($1M-$10M)", "HHI", "Top 5 Share", "Concentration Risk"),
+        Value = c(wc$unique_whales, wc$mega_whales, wc$regular_whales,
+                  round(wc$hhi, 1), paste0(round(wc$top_5_share, 1), "%"),
+                  wc$concentration_risk)
+      )
+    } else {
+      data.frame(Message = "No whale concentration data")
+    }
   })
 
+  # UPDATED: Sentiment Plot (Fear & Greed only - Google Trends removed)
+  output$sentiment_plot <- renderPlot({
+    req(results())
+    sent <- results()$signals$sentiment
+    if (is.null(sent)) {
+      df <- data.frame(x = 1, y = 1, label = "No sentiment data")
+      ggplot(df, aes(x = x, y = y)) +
+        geom_text(aes(label = label), size = 5) +
+        theme_void()
+    } else {
+      # Create a gauge-like plot for Fear & Greed
+      df <- data.frame(
+        xmin = c(0, 25, 45, 55, 75),
+        xmax = c(25, 45, 55, 75, 100),
+        ymin = 0, ymax = 1,
+        zone = c("Extreme Fear", "Fear", "Neutral", "Greed", "Extreme Greed")
+      )
+
+      value <- sent$value
+
+      ggplot() +
+        geom_rect(data = df, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = zone),
+                  alpha = 0.3) +
+        geom_vline(xintercept = value, size = 2, color = "black") +
+        annotate("text", x = value, y = 1.2,
+                 label = paste0(value, "/100"), size = 5, fontface = "bold") +
+        annotate("text", x = 50, y = -0.2,
+                 label = paste("Classification:", sent$classification), size = 4) +
+        annotate("text", x = 50, y = -0.4,
+                 label = paste("Contrarian:", sent$contrarian_signal), size = 4,
+                 color = ifelse(sent$contrarian_signal == "Bullish (buy)", "green",
+                                ifelse(sent$contrarian_signal == "Bearish (sell)", "red", "gray"))) +
+        scale_fill_manual(values = c("Extreme Fear" = "darkgreen",
+                                     "Fear" = "lightgreen",
+                                     "Neutral" = "gray",
+                                     "Greed" = "orange",
+                                     "Extreme Greed" = "red")) +
+        labs(title = "Fear & Greed Index",
+             x = "Value", y = "") +
+        xlim(0, 100) + ylim(-0.5, 1.5) +
+        theme_minimal() +
+        theme(plot.title = element_text(hjust = 0.5),
+              axis.text.y = element_blank(),
+              axis.ticks.y = element_blank(),
+              legend.position = "bottom")
+    }
+  })
+
+  # UPDATED: Positioning Table with whale concentration
   output$positioning_table <- renderTable({
     req(results())
 
@@ -960,10 +983,25 @@ server <- function(input, output, session) {
         Value = c(pos$whale_flow, pos$whale_activity, pos$whale_interpretation)
       )
 
-      if (!is.null(pos$sentiment)) {
+      # Add whale concentration if available
+      if (!is.null(pos$whale_concentration)) {
+        wc <- pos$whale_concentration
+        conc_df <- data.frame(
+          Metric = c("HHI", "Top 5 Share", "Concentration Risk"),
+          Value = c(round(wc$hhi, 1),
+                    paste0(round(wc$top_5_share, 1), "%"),
+                    wc$concentration_risk)
+        )
+        df <- rbind(df, conc_df)
+      }
+
+      # Add sentiment
+      if (!is.null(results()$signals$sentiment)) {
+        sent <- results()$signals$sentiment
         sent_df <- data.frame(
-          Metric = c("Google Trends Score", "Sentiment Signal"),
-          Value = c(paste0(round(pos$sentiment$score, 1), "/100"), pos$sentiment$signal)
+          Metric = c("Fear & Greed", "Sentiment Signal"),
+          Value = c(paste0(sent$value, "/100 - ", sent$classification),
+                    sent$contrarian_signal)
         )
         df <- rbind(df, sent_df)
       }

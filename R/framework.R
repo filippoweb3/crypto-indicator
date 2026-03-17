@@ -335,7 +335,11 @@ crypto_predictive_framework <- function(assets = c("Bitcoin"),
       framework$raw_data$positioning <- pos_data
 
       # Fix HHI scaling (ensure it's on 0-10,000 scale)
-      hhi_value <- pos_data$raw_positioning_data$whale_concentration$hhi
+      hhi_value <- if (!is.null(pos_data$raw_positioning_data$whale_concentration)) {
+        pos_data$raw_positioning_data$whale_concentration$hhi
+      } else {
+        0
+      }
 
       #-------------------------------------------------------------------------
       # BASIC POSITIONING SIGNALS
