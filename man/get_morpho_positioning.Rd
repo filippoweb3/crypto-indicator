@@ -7,11 +7,12 @@
 get_morpho_positioning(
   chain_ids = c(1, 8453),
   min_exposure_usd = 1e+05,
-  include_depositors = FALSE,
-  include_flows = FALSE,
-  top_n_vaults = 10,
-  max_depositors_per_vault = 20,
-  human_readable = TRUE
+  include_depositors = TRUE,
+  include_flows = TRUE,
+  top_n_vaults = 5,
+  max_depositors_per_vault = 10,
+  human_readable = TRUE,
+  verbose = FALSE
 )
 }
 \arguments{
