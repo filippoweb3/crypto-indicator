@@ -6,6 +6,7 @@ library(CryptoIndicator)
 library(ggplot2)
 library(dplyr)
 library(shinythemes)
+library(zoo)
 
 # ======================================
 # LOAD BUILT-IN DEMO DATA
@@ -27,8 +28,13 @@ ui <- fluidPage(
 
   theme = shinytheme("darkly"),
 
-  # Custom CSS
+  # JavaScript for button control
   tags$head(
+    tags$script(HTML("
+      Shiny.addCustomMessageHandler('jsCode', function(message) {
+        eval(message.code);
+      });
+    ")),
     tags$style(HTML("
       .well {
         background-color: #2c3e50;
@@ -79,10 +85,11 @@ ui <- fluidPage(
     "))
   ),
 
-  # App title
+  # App title with REACTIVE badge
   titlePanel(
     div("CryptoIndicator Dashboard",
-        span(class = "demo-badge", "DEMO READY"))
+        uiOutput("mode_badge")
+    )
   ),
 
   # Sidebar layout
@@ -164,12 +171,6 @@ ui <- fluidPage(
                       "FRED API Key:",
                       value = "",
                       placeholder = "Enter your FRED API key"),
-
-            # Whale Alert API Key manual input
-            textInput("whale_api_key",
-                      "Whale Alert API Key:",
-                      value = "",
-                      placeholder = "Enter your Whale Alert API key"),
 
             tags$small(class = "text-muted",
                        "API keys are optional. Leave blank to run without them."),
@@ -281,7 +282,7 @@ ui <- fluidPage(
                  h4("M2 Money Supply Growth"),
                  plotOutput("m2_plot", height = "250px"),
                  br(),
-                 h4("US Dollar Index (DXY)"),
+                 h4("US Dollar Index (FRED)"),
                  plotOutput("dxy_plot", height = "250px"),
                  br(),
                  h4("Composite Risk Score"),
@@ -291,14 +292,17 @@ ui <- fluidPage(
 
         tabPanel("Positioning",
                  br(),
-                 h4("Whale Flow"),
-                 plotOutput("whale_plot", height = "150px"),
+                 h4("Whale Flows"),
+                 plotOutput("whale_flow_plot", height = "200px"),
                  br(),
-                 h4("Google Trends Sentiment"),
+                 h4("Whale Concentration"),
+                 plotOutput("whale_concentration_plot", height = "250px"),
+                 br(),
+                 h4("Top Whales"),
+                 tableOutput("whale_table"),
+                 br(),
+                 h4("Fear & Greed Sentiment"),
                  plotOutput("sentiment_plot", height = "250px"),
-                 br(),
-                 h4("Sentiment History"),
-                 plotOutput("sentiment_history_plot", height = "250px"),
                  br(),
                  tableOutput("positioning_table"))
       )
@@ -316,15 +320,24 @@ server <- function(input, output, session) {
   data_source <- reactiveVal("none")
 
   # ======================================
+  # REACTIVE MODE BADGE
+  # ======================================
+  output$mode_badge <- renderUI({
+    if (input$app_mode == "demo") {
+      span(class = "demo-badge", "DEMO MODE")
+    } else {
+      span(class = "demo-badge", style = "background-color: #27ae60;", "LIVE MODE")
+    }
+  })
+
+  # ======================================
   # AUTO-LOAD DEFAULT DEMO ON STARTUP
   # ======================================
   observe({
-    if (!is.null(default_demo)) {
+    if (!is.null(default_demo) && input$app_mode == "demo") {
       results(default_demo)
       data_source("Default Demo")
       output$status <- renderText("✅ Default demo auto-loaded")
-    } else {
-      output$status <- renderText("❌ Default demo file not found")
     }
   })
 
@@ -345,43 +358,93 @@ server <- function(input, output, session) {
   })
 
   # ======================================
-  # LIVE MODE HANDLER
+  # SWITCH TO DEMO MODE WHEN SELECTED
+  # ======================================
+  observeEvent(input$app_mode, {
+    if (input$app_mode == "demo" && !is.null(default_demo) && is.null(results())) {
+      results(default_demo)
+      data_source("Default Demo")
+      output$status <- renderText("✅ Switched to demo mode")
+    } else if (input$app_mode == "live") {
+      # Clear results when switching to live mode
+      results(NULL)
+      data_source("none")
+      output$status <- renderText("Ready to run live analysis")
+    }
+  })
+
+  # ======================================
+  # LIVE MODE HANDLER - WITH DEBUGGING
   # ======================================
   observeEvent(input$run_live, {
 
     output$status <- renderText("🔄 Running live analysis...")
 
-    # Run framework with API keys passed directly
+    # Disable button to prevent double-clicks
+    session$sendCustomMessage(type = "jsCode",
+                              list(code = "$('#run_live').prop('disabled', true)"))
+
     tryCatch({
+      print("========== LIVE MODE DEBUG ==========")
+      print(paste("Start date:", input$dates[1]))
+      print(paste("FRED API key provided:", input$fred_api_key != ""))
+
+      # Run framework
+      print("Calling crypto_predictive_framework...")
+
       res <- crypto_predictive_framework(
         assets = input$asset,
         start_date = as.character(input$dates[1]),
-        include_google_trends = TRUE,
-        fred_api_key = if(input$fred_api_key != "") input$fred_api_key else NULL,
-        whale_api_key = if(input$whale_api_key != "") input$whale_api_key else NULL
+        fred_api_key = if(input$fred_api_key != "") input$fred_api_key else NULL
       )
 
+      print("Framework returned successfully")
+      print(paste("Class of res:", paste(class(res), collapse = ", ")))
+      print(paste("Is list:", is.list(res)))
+      print(paste("Has summary:", !is.null(res$summary)))
+
+      if (!is.null(res$summary)) {
+        print(paste("Risk color:", res$summary$risk$color))
+        print(paste("Risk level:", res$summary$risk$level))
+      }
+
+      # Validate the result
+      if (is.null(res) || !is.list(res)) {
+        stop("Framework returned invalid result")
+      }
+
+      # Store results
       results(res)
       data_source(paste("Live Analysis -", Sys.Date()))
       output$status <- renderText("✅ Live analysis complete!")
 
+      print("✅ Live mode completed successfully")
+      print("======================================")
+
+      # Show success notification
+      showNotification(
+        "Live analysis completed successfully!",
+        type = "message",
+        duration = 5
+      )
+
     }, error = function(e) {
+      print(paste("❌ ERROR in live mode:", e$message))
+      print("Traceback:")
+      print(traceback())
+
       output$status <- renderText(paste("❌ Error:", e$message))
 
-      # Helpful error messages
-      if (grepl("FRED", e$message)) {
-        showNotification(
-          "FRED API key issue. Check your key and try again.",
-          type = "error",
-          duration = 8
-        )
-      } else if (grepl("Whale", e$message)) {
-        showNotification(
-          "Whale Alert API key issue. Check your key and try again.",
-          type = "error",
-          duration = 8
-        )
-      }
+      showNotification(
+        paste("Error:", e$message),
+        type = "error",
+        duration = 10
+      )
+
+    }, finally = {
+      # Re-enable button
+      session$sendCustomMessage(type = "jsCode",
+                                list(code = "$('#run_live').prop('disabled', false)"))
     })
   })
 
@@ -411,15 +474,49 @@ server <- function(input, output, session) {
   })
 
   # ======================================
-  # RISK AND METRICS DISPLAYS
+  # RISK AND METRICS DISPLAYS - SAFE VERSION
   # ======================================
 
   output$risk_box <- renderUI({
-    req(results())
+    # Debug output
+    print("========== RISK BOX ==========")
 
-    risk_color <- results()$decisions$risk_off$color
-    risk_level <- results()$decisions$risk_off$level
-    risk_factors <- paste(results()$decisions$risk_off$factors, collapse = " • ")
+    if (is.null(results())) {
+      print("results() is NULL")
+      return(div(class = "well",
+                 h4("⏳ No Data Loaded"),
+                 p("Please run analysis or load demo.")))
+    }
+
+    res <- results()
+    print(paste("results class:", class(res)[1]))
+
+    if (!is.list(res)) {
+      print(paste("results is atomic vector of length:", length(res)))
+      return(div(class = "well",
+                 h4("⚠️ Data Error"),
+                 p(paste("Expected list, got:", class(res)[1]))))
+    }
+
+    if (is.null(res$summary)) {
+      print("res$summary is NULL")
+      return(div(class = "well",
+                 h4("⚠️ Incomplete Data"),
+                 p("Summary missing from results.")))
+    }
+
+    if (is.null(res$summary$risk)) {
+      print("res$summary$risk is NULL")
+      return(div(class = "well",
+                 h4("⚠️ Risk Data Missing"),
+                 p("Risk information not available.")))
+    }
+
+    risk_color <- res$summary$risk$color %||% "UNKNOWN"
+    risk_level <- res$summary$risk$level %||% "UNKNOWN"
+    risk_factors <- paste(res$summary$risk$factors %||% "None", collapse = " • ")
+
+    print(paste("Rendering with color:", risk_color, "level:", risk_level))
 
     div(class = paste("risk-", risk_color, sep = ""),
         h4(paste("⚠️", risk_color, "-", risk_level)),
@@ -428,35 +525,34 @@ server <- function(input, output, session) {
   })
 
   output$short_term <- renderUI({
-    req(results())
-    signal <- results()$decisions$short_term$momentum$signal
-    score <- results()$decisions$short_term$momentum$score
-    div(class = "well text-center",
-        h4(signal),
-        p("Score: ", score)
-    )
+    if (is.null(results())) {
+      return(div(class = "well text-center", h4("No data")))
+    }
+    res <- results()
+    signal <- tryCatch(res$summary$short_term %||% "Unknown", error = function(e) "Unknown")
+    div(class = "well text-center", h4(signal))
   })
 
   output$medium_term <- renderUI({
-    req(results())
-    signal <- results()$decisions$medium_term$trend$direction
-    score <- results()$decisions$medium_term$trend$score
-    alloc <- results()$decisions$medium_term$position_sizing$recommended_allocation_pct
+    if (is.null(results())) {
+      return(div(class = "well text-center", h4("No data")))
+    }
+    res <- results()
+    signal <- tryCatch(res$summary$medium_term %||% "Unknown", error = function(e) "Unknown")
+    alloc <- tryCatch(res$summary$allocation %||% "0%", error = function(e) "0%")
     div(class = "well text-center",
         h4(signal),
-        p("Score: ", score),
-        p("Allocation: ", alloc, "%")
+        p("Allocation: ", alloc)
     )
   })
 
   output$long_term <- renderUI({
-    req(results())
-    signal <- results()$decisions$long_term$strategic$core_position
-    cycle <- results()$decisions$long_term$cycle$interpretation
-    div(class = "well text-center",
-        h4(signal),
-        p(cycle)
-    )
+    if (is.null(results())) {
+      return(div(class = "well text-center", h4("No data")))
+    }
+    res <- results()
+    signal <- tryCatch(res$summary$long_term %||% "Unknown", error = function(e) "Unknown")
+    div(class = "well text-center", h4(signal))
   })
 
   output$summary <- renderPrint({
@@ -474,7 +570,7 @@ server <- function(input, output, session) {
   }
 
   # ======================================
-  # ALL PLOTTING FUNCTIONS (same as before)
+  # PLOTTING FUNCTIONS (all with NULL checks)
   # ======================================
 
   output$mvrv_plot <- renderPlot({
@@ -486,7 +582,7 @@ server <- function(input, output, session) {
     if (nrow(df) == 0) return(NULL)
 
     ggplot(df, aes(x = timestamp, y = mvrv)) +
-      geom_line(color = "steelblue", size = 1) +
+      geom_line(color = "steelblue", linewidth = 1) +
       geom_hline(yintercept = c(0.7, 0.9, 1.75),
                  linetype = "dashed", color = "red", alpha = 0.5) +
       annotate("rect", xmin = min(df$timestamp), xmax = max(df$timestamp),
@@ -510,7 +606,7 @@ server <- function(input, output, session) {
     if (nrow(df) == 0) return(NULL)
 
     ggplot(df, aes(x = timestamp, y = puell_multiple)) +
-      geom_line(color = "darkorange", size = 1) +
+      geom_line(color = "darkorange", linewidth = 1) +
       geom_hline(yintercept = c(0.7, 2),
                  linetype = "dashed", color = "red", alpha = 0.5) +
       annotate("text", x = min(df$timestamp), y = 0.6, label = "Miner Capitulation",
@@ -532,7 +628,7 @@ server <- function(input, output, session) {
     if (nrow(df) == 0) return(NULL)
 
     ggplot(df, aes(x = timestamp, y = nvts)) +
-      geom_line(color = "purple", size = 1) +
+      geom_line(color = "purple", linewidth = 1) +
       geom_hline(yintercept = c(30, 70),
                  linetype = "dashed", color = "red", alpha = 0.5) +
       annotate("text", x = min(df$timestamp), y = 25, label = "Undervalued",
@@ -557,8 +653,7 @@ server <- function(input, output, session) {
       Regime = c(oc$mvrv$regime,
                  oc$nvt$regime,
                  oc$puell$regime,
-                 oc$composite),
-      Signal = c(oc$mvrv$signal, "-", "-", oc$composite)
+                 oc$composite)
     )
   })
 
@@ -573,6 +668,8 @@ server <- function(input, output, session) {
       date = tail(results()$indicators$onchain$timestamp, last_n),
       regime = tail(vol$regime, last_n)
     )
+
+    regime_data <- regime_data[!is.na(regime_data$regime), ]
 
     ggplot(regime_data, aes(x = date, y = 1, fill = regime)) +
       geom_tile(height = 0.8) +
@@ -601,9 +698,11 @@ server <- function(input, output, session) {
       medium_vol = tail(vol$volatility$medium, n) * 100
     )
 
+    df <- na.omit(df)
+
     ggplot(df, aes(x = date)) +
-      geom_line(aes(y = short_vol, color = "Short-term (7d)"), size = 1) +
-      geom_line(aes(y = medium_vol, color = "Medium-term (30d)"), size = 1, linetype = "dashed") +
+      geom_line(aes(y = short_vol, color = "Short-term (7d)"), linewidth = 1) +
+      geom_line(aes(y = medium_vol, color = "Medium-term (30d)"), linewidth = 1, linetype = "dashed") +
       scale_color_manual(values = c("Short-term (7d)" = "blue",
                                     "Medium-term (30d)" = "red")) +
       labs(title = "Volatility Comparison",
@@ -646,23 +745,16 @@ server <- function(input, output, session) {
   output$volatility_table <- renderTable({
     req(results())
     vol_sig <- results()$signals$volatility
-    vol_full <- results()$indicators$volatility
-    last_30 <- tail(vol_full$signals$vol_breakout, 30)
-    breakout_count <- sum(last_30, na.rm = TRUE)
-    compression_count <- sum(tail(vol_full$signals$vol_compression, 30), na.rm = TRUE)
 
     data.frame(
       Metric = c("Current Regime", "Environment", "Strategy",
-                 "7d Percentile", "30d Percentile",
-                 "Breakouts (30d)", "Compressions (30d)"),
+                 "7d Percentile", "30d Percentile"),
       Value = c(
         vol_sig$regime,
         vol_sig$current_regime,
         vol_sig$strategy,
         paste0(round(vol_sig$percentile_short * 100, 1), "%"),
-        paste0(round(vol_sig$percentile_medium * 100, 1), "%"),
-        breakout_count,
-        compression_count
+        paste0(round(vol_sig$percentile_medium * 100, 1), "%")
       )
     )
   })
@@ -670,7 +762,11 @@ server <- function(input, output, session) {
   output$funding_plot <- renderPlot({
     req(results())
     deriv <- results()$raw_data$derivatives
-    if (is.null(deriv) || is.null(deriv$data)) return(NULL)
+    if (is.null(deriv) || is.null(deriv$data)) {
+      return(ggplot() +
+               annotate("text", x = 0.5, y = 0.5, label = "No derivatives data") +
+               theme_void())
+    }
 
     df <- filter_by_date(deriv$data, "date", input$filter_dates[1], input$filter_dates[2])
     if (nrow(df) == 0) return(NULL)
@@ -705,9 +801,9 @@ server <- function(input, output, session) {
     if (nrow(df) == 0) return(NULL)
 
     ggplot(df, aes(x = date)) +
-      geom_line(aes(y = oi_percentile, color = "OI Percentile"), size = 1) +
+      geom_line(aes(y = oi_percentile, color = "OI Percentile"), linewidth = 1) +
       geom_line(aes(y = funding_percentile, color = "Funding Percentile"),
-                size = 1, linetype = "dashed") +
+                linewidth = 1, linetype = "dashed") +
       geom_hline(yintercept = c(10, 90), linetype = "dotted", color = "gray50") +
       scale_color_manual(values = c("OI Percentile" = "blue",
                                     "Funding Percentile" = "red")) +
@@ -724,19 +820,17 @@ server <- function(input, output, session) {
     signals <- results()$signals$derivatives
 
     df <- data.frame(
-      signal = c("Crowded Long", "Crowded Short", "OI Momentum"),
+      signal = c("Crowded Long", "Crowded Short"),
       value = c(ifelse(signals$crowded_long, 1, 0),
-                ifelse(signals$crowded_short, 1, 0),
-                signals$oi_momentum)
+                ifelse(signals$crowded_short, 1, 0))
     )
 
     ggplot(df, aes(x = signal, y = value, fill = signal)) +
       geom_col() +
       scale_fill_manual(values = c("Crowded Long" = "red",
-                                   "Crowded Short" = "green",
-                                   "OI Momentum" = "blue")) +
+                                   "Crowded Short" = "green")) +
       labs(title = "Crowded Trade Signals",
-           x = "", y = "Signal Strength") +
+           x = "", y = "Signal (1 = Active)") +
       theme_minimal() +
       theme(plot.title = element_text(hjust = 0.5),
             legend.position = "none")
@@ -748,13 +842,15 @@ server <- function(input, output, session) {
     if (!is.null(d)) {
       data.frame(
         Metric = c("Funding Regime", "OI Percentile", "Funding Percentile",
-                   "OI Momentum", "Crowded Long", "Crowded Short", "Interpretation"),
+                   "OI Momentum", "Crowded Long", "Crowded Short",
+                   "Data Confidence", "Interpretation"),
         Value = c(d$funding_regime,
                   paste0(round(d$oi_percentile * 100, 1), "%"),
                   paste0(round(d$funding_percentile * 100, 1), "%"),
                   paste0(round(d$oi_momentum * 100, 1), "%"),
                   ifelse(d$crowded_long, "⚠️ Yes", "No"),
                   ifelse(d$crowded_short, "⚠️ Yes", "No"),
+                  paste0(d$percentile_confidence, " (", d$n_observations, " days)"),
                   d$interpretation)
       )
     }
@@ -776,7 +872,7 @@ server <- function(input, output, session) {
     if (nrow(m2_data) == 0) return(NULL)
 
     ggplot(m2_data, aes(x = date, y = m2_yoy)) +
-      geom_line(color = "darkgreen", size = 1) +
+      geom_line(color = "darkgreen", linewidth = 1) +
       geom_hline(yintercept = c(0, 5), linetype = "dashed", color = "red") +
       annotate("rect", xmin = min(m2_data$date), xmax = max(m2_data$date),
                ymin = 5, ymax = max(m2_data$m2_yoy, na.rm = TRUE),
@@ -797,20 +893,20 @@ server <- function(input, output, session) {
 
     dxy <- macro$dollar$dxy
     dxy_df <- data.frame(
-      date = as.Date(zoo::index(dxy)),
-      dxy = as.numeric(quantmod::Cl(dxy))
+      date = as.Date(dxy$date),
+      dxy = dxy$value
     )
 
     dxy_df <- filter_by_date(dxy_df, "date", input$filter_dates[1], input$filter_dates[2])
     if (nrow(dxy_df) == 0) return(NULL)
 
     ggplot(dxy_df, aes(x = date, y = dxy)) +
-      geom_line(color = "blue", size = 1) +
-      geom_hline(yintercept = c(90, 100), linetype = "dashed", color = "red") +
+      geom_line(color = "blue", linewidth = 1) +
+      geom_hline(yintercept = c(110, 120), linetype = "dashed", color = "red") +
       annotate("rect", xmin = min(dxy_df$date), xmax = max(dxy_df$date),
-               ymin = 90, ymax = 100, alpha = 0.1, fill = "orange") +
-      labs(title = "US Dollar Index (DXY)",
-           x = "Date", y = "DXY") +
+               ymin = 110, ymax = 120, alpha = 0.1, fill = "orange") +
+      labs(title = "US Dollar Index (FRED - DTWEXBGS)",
+           x = "Date", y = "Index Value") +
       theme_minimal() +
       theme(plot.title = element_text(hjust = 0.5))
   })
@@ -855,96 +951,130 @@ server <- function(input, output, session) {
     }
   })
 
-  output$whale_plot <- renderPlot({
+  output$whale_flow_plot <- renderPlot({
     req(results())
     pos <- results()$signals$positioning
-    if (is.null(pos)) {
-      df <- data.frame(x = 1, y = 1, label = "No whale data available")
+    if (is.null(pos) || is.null(pos$vault_flows)) {
+      df <- data.frame(x = 1, y = 1, label = "No whale flow data")
       ggplot(df, aes(x = x, y = y)) +
         geom_text(aes(label = label), size = 5) +
-        theme_void() +
-        labs(title = "Whale Flow")
+        theme_void()
     } else {
-      flow_color <- ifelse(grepl("Extreme Inflows", pos$whale_flow), "red",
-                           ifelse(grepl("Inflows", pos$whale_flow), "orange",
-                                  ifelse(grepl("Extreme Outflows", pos$whale_flow), "green",
-                                         ifelse(grepl("Outflows", pos$whale_flow), "lightgreen", "gray"))))
+      flow_color <- ifelse(grepl("Inflows", pos$vault_flows$flow_regime), "green",
+                           ifelse(grepl("Outflows", pos$vault_flows$flow_regime), "red", "gray"))
 
-      netflow <- ifelse(!is.null(results()$raw_data$positioning),
-                        results()$raw_data$positioning$exchange_positioning$netflow_summary$netflow_usd / 1e6,
-                        0)
+      netflow <- pos$vault_flows$net_flow_pct
 
       ggplot() +
-        annotate("rect", xmin = 0, xmax = 1, ymin = 0, ymax = 1,
+        annotate("rect", xmin = 0, xmax = 1, ymin = 0, ymax = 0.4,
                  fill = flow_color, alpha = 0.5) +
+        annotate("text", x = 0.5, y = 0.2,
+                 label = paste("Flow Regime:", pos$vault_flows$flow_regime), size = 5) +
         annotate("text", x = 0.5, y = 0.7,
-                 label = paste("Flow:", pos$whale_flow), size = 4) +
-        annotate("text", x = 0.5, y = 0.4,
-                 label = paste("Net Flow: $", round(netflow, 1), "M"), size = 4) +
-        labs(title = "Whale Positioning") +
+                 label = paste("Net Flow:", round(netflow, 1), "%"), size = 6, fontface = "bold") +
+        labs(title = "Whale Flows") +
         xlim(0, 1) + ylim(0, 1) +
         theme_void() +
         theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
     }
   })
 
-  output$sentiment_plot <- renderPlot({
+  output$whale_concentration_plot <- renderPlot({
     req(results())
     pos <- results()$signals$positioning
-    if (is.null(pos) || is.null(pos$sentiment)) {
-      df <- data.frame(x = 1, y = 1, label = "No Google Trends data")
+    if (is.null(pos) || is.null(pos$whale_concentration)) {
+      df <- data.frame(x = 1, y = 1, label = "No whale concentration data")
       ggplot(df, aes(x = x, y = y)) +
         geom_text(aes(label = label), size = 5) +
-        theme_void() +
-        labs(title = "Retail Sentiment")
+        theme_void()
     } else {
+      wc <- pos$whale_concentration
+
       df <- data.frame(
-        x = c(0, 20, 40, 60, 80, 100),
-        xend = c(20, 40, 60, 80, 100, 120),
-        y = 1, yend = 1,
-        zone = c("Low", "Normal", "Normal", "High", "Extreme", "")
+        category = c("Mega Whales (>$10M)", "Regular Whales ($1M-$10M)",
+                     "Dolphins ($100k-$1M)", "Retail (<$100k)"),
+        count = c(wc$mega_whales, wc$regular_whales, wc$dolphins %||% 0, wc$retail %||% 0)
       )
 
-      ggplot() +
-        geom_segment(data = df, aes(x = x, xend = xend, y = y, yend = yend, color = zone),
-                     size = 20, alpha = 0.3) +
-        geom_vline(xintercept = pos$sentiment$score, size = 2, color = "black") +
-        annotate("text", x = pos$sentiment$score, y = 1.5,
-                 label = paste0(round(pos$sentiment$score, 1), "/100"), size = 5) +
-        annotate("text", x = 50, y = 0.5,
-                 label = pos$sentiment$signal, size = 4) +
-        scale_color_manual(values = c("Low" = "green", "Normal" = "yellow",
-                                      "High" = "orange", "Extreme" = "red")) +
-        labs(title = "Google Trends Sentiment") +
-        xlim(0, 100) + ylim(0, 2) +
-        theme_void() +
-        theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+      hhi_color <- ifelse(wc$hhi > 2500, "red",
+                          ifelse(wc$hhi > 1500, "orange", "green"))
+
+      ggplot(df, aes(x = category, y = count, fill = category)) +
+        geom_col() +
+        geom_text(aes(label = count), vjust = -0.5) +
+        annotate("text", x = 2, y = max(df$count, na.rm = TRUE) * 1.2,
+                 label = paste("HHI:", round(wc$hhi, 1), "-", wc$hhi_interpretation),
+                 color = hhi_color, size = 5, fontface = "bold") +
+        labs(title = "Whale Concentration",
+             x = "", y = "Count") +
+        theme_minimal() +
+        theme(plot.title = element_text(hjust = 0.5),
+              axis.text.x = element_text(angle = 45, hjust = 1),
               legend.position = "none")
     }
   })
 
-  output$sentiment_history_plot <- renderPlot({
+  output$whale_table <- renderTable({
     req(results())
-    pos_raw <- results()$raw_data$positioning
-    if (is.null(pos_raw) || is.null(pos_raw$google_trends)) return(NULL)
+    pos <- results()$signals$positioning
+    if (!is.null(pos) && !is.null(pos$whale_concentration)) {
+      wc <- pos$whale_concentration
+      data.frame(
+        Metric = c("Total Unique Wallets", "Mega Whales (>$10M)",
+                   "Regular Whales ($1M-$10M)", "HHI", "Top 5 Share", "Concentration Risk"),
+        Value = c(wc$unique_whales, wc$mega_whales, wc$regular_whales,
+                  round(wc$hhi, 1), paste0(round(wc$top_5_share, 1), "%"),
+                  wc$concentration_risk)
+      )
+    } else {
+      data.frame(Message = "No whale concentration data")
+    }
+  })
 
-    trends_data <- pos_raw$google_trends$interest_over_time
-    if (is.null(trends_data)) return(NULL)
+  output$sentiment_plot <- renderPlot({
+    req(results())
+    sent <- results()$signals$sentiment
+    if (is.null(sent)) {
+      df <- data.frame(x = 1, y = 1, label = "No sentiment data")
+      ggplot(df, aes(x = x, y = y)) +
+        geom_text(aes(label = label), size = 5) +
+        theme_void()
+    } else {
+      df <- data.frame(
+        xmin = c(0, 25, 45, 55, 75),
+        xmax = c(25, 45, 55, 75, 100),
+        ymin = 0, ymax = 1,
+        zone = c("Extreme Fear", "Fear", "Neutral", "Greed", "Extreme Greed")
+      )
 
-    trends_df <- data.frame(
-      date = as.Date(trends_data$date),
-      hits = trends_data$hits
-    )
+      value <- sent$value
 
-    trends_df <- filter_by_date(trends_df, "date", input$filter_dates[1], input$filter_dates[2])
-
-    ggplot(trends_df, aes(x = date, y = hits)) +
-      geom_line(color = "orange", size = 1) +
-      geom_hline(yintercept = c(20, 80), linetype = "dashed", color = "red") +
-      labs(title = "Google Trends History",
-           x = "Date", y = "Search Interest (0-100)") +
-      theme_minimal() +
-      theme(plot.title = element_text(hjust = 0.5))
+      ggplot() +
+        geom_rect(data = df, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = zone),
+                  alpha = 0.3) +
+        geom_vline(xintercept = value, size = 2, color = "black") +
+        annotate("text", x = value, y = 1.2,
+                 label = paste0(value, "/100"), size = 5, fontface = "bold") +
+        annotate("text", x = 50, y = -0.2,
+                 label = paste("Classification:", sent$classification), size = 4) +
+        annotate("text", x = 50, y = -0.4,
+                 label = paste("Contrarian:", sent$contrarian_signal), size = 4,
+                 color = ifelse(sent$contrarian_signal == "Bullish (buy)", "green",
+                                ifelse(sent$contrarian_signal == "Bearish (sell)", "red", "gray"))) +
+        scale_fill_manual(values = c("Extreme Fear" = "darkgreen",
+                                     "Fear" = "lightgreen",
+                                     "Neutral" = "gray",
+                                     "Greed" = "orange",
+                                     "Extreme Greed" = "red")) +
+        labs(title = "Fear & Greed Index",
+             x = "Value", y = "") +
+        xlim(0, 100) + ylim(-0.5, 1.5) +
+        theme_minimal() +
+        theme(plot.title = element_text(hjust = 0.5),
+              axis.text.y = element_blank(),
+              axis.ticks.y = element_blank(),
+              legend.position = "bottom")
+    }
   })
 
   output$positioning_table <- renderTable({
@@ -960,10 +1090,23 @@ server <- function(input, output, session) {
         Value = c(pos$whale_flow, pos$whale_activity, pos$whale_interpretation)
       )
 
-      if (!is.null(pos$sentiment)) {
+      if (!is.null(pos$whale_concentration)) {
+        wc <- pos$whale_concentration
+        conc_df <- data.frame(
+          Metric = c("HHI", "Top 5 Share", "Concentration Risk"),
+          Value = c(round(wc$hhi, 1),
+                    paste0(round(wc$top_5_share, 1), "%"),
+                    wc$concentration_risk)
+        )
+        df <- rbind(df, conc_df)
+      }
+
+      if (!is.null(results()$signals$sentiment)) {
+        sent <- results()$signals$sentiment
         sent_df <- data.frame(
-          Metric = c("Google Trends Score", "Sentiment Signal"),
-          Value = c(paste0(round(pos$sentiment$score, 1), "/100"), pos$sentiment$signal)
+          Metric = c("Fear & Greed", "Sentiment Signal"),
+          Value = c(paste0(sent$value, "/100 - ", sent$classification),
+                    sent$contrarian_signal)
         )
         df <- rbind(df, sent_df)
       }

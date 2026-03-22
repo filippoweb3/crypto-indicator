@@ -17,19 +17,9 @@ Default is "2015-01-01". Data will be fetched from this date to present.}
 \value{
 A list object of class \code{market_data} containing:
   \describe{
-    \item{data}{A data frame with the following columns:
-      \itemize{
-        \item \code{timestamp}: Date of the observation
-        \item \code{slug}: Asset identifier (e.g., "bitcoin")
-        \item \code{symbol}: Trading symbol (e.g., "BTC")
-        \item \code{name}: Full asset name (e.g., "Bitcoin")
-        \item \code{open}, \code{high}, \code{low}, \code{close}: OHLC prices in USD
-        \item \code{volume}: Trading volume in USD
-        \item \code{market_cap}: Market capitalization in USD
-      }
-    }
-    \item{assets}{Character vector of requested asset names (echoed input)}
-    \item{start_date}{Requested start date (echoed input)}
+    \item{data}{A data frame with OHLCV and market cap data}
+    \item{assets}{Character vector of requested asset names}
+    \item{start_date}{Requested start date}
     \item{last_update}{System date when data was fetched}
   }
 }
@@ -42,19 +32,13 @@ calculations.
 }
 \details{
 The function uses \code{crypto2::crypto_history()} which sources data from
-CoinMarketCap's historical API. Key characteristics:
-\itemize{
-  \item Data frequency: Daily
-  \item Price currency: USD
-  \item Coverage: From 2013 for major assets, later for smaller assets
-  \item Rate limiting: Respects API rate limits (use responsibly)
-}
+CoinMarketCap's historical API. Data is returned at daily frequency in USD.
+Coverage begins from 2013 for major assets, with later start dates for smaller assets.
 }
 \note{
 \itemize{
   \item Internet connection required
-  \item First call may be slow as it caches coin list
-  \item Some assets may have limited historical data before their listing date
+  \item First call may be slow due to coin list caching
   \item Market capitalization is as reported by CoinMarketCap
 }
 }
@@ -68,13 +52,6 @@ multi_asset <- get_market_data(
   assets = c("Bitcoin", "Ethereum"),
   start_date = "2018-01-01"
 )
-
-# Access the data
-head(multi_asset$data)
-
-# Check metadata
-cat("Assets:", paste(multi_asset$assets, collapse = ", "), "\n")
-cat("Last updated:", multi_asset$last_update)
 }
 
 }
@@ -82,12 +59,6 @@ cat("Last updated:", multi_asset$last_update)
 CoinMarketCap API Documentation: \url{https://coinmarketcap.com/api/}
 }
 \seealso{
-\itemize{
-  \item \code{\link{get_onchain_indicators}} for deriving on-chain metrics from this data
-  \item \code{\link{get_volatility}} for volatility calculations
-  \item \code{crypto2::crypto_history()} for underlying API details
-}
-}
-\author{
-Filippo Franchini
+\code{\link{get_onchain_indicators}} for deriving on-chain metrics
+\code{\link{get_volatility}} for volatility calculations
 }

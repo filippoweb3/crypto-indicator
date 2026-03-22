@@ -4,10 +4,13 @@
 \alias{print_crypto_summary}
 \title{Print Comprehensive Crypto Framework Summary}
 \usage{
-print_crypto_summary(x)
+print_crypto_summary(x, detailed = TRUE)
 }
 \arguments{
 \item{x}{A crypto_framework object returned by \code{\link{crypto_predictive_framework}}}
+
+\item{detailed}{Logical. If TRUE, shows all sections with explanatory notes.
+If FALSE, shows condensed summary. Default TRUE.}
 }
 \value{
 None. Prints formatted summary to console.
@@ -16,10 +19,15 @@ None. Prints formatted summary to console.
 Displays a formatted, easy-to-understand summary of the crypto predictive framework
 results. The output is designed to be self-explanatory and shareable with team
 members, stakeholders, or anyone needing actionable crypto market insights.
+
+The summary is organized hierarchically, starting with the most critical information
+(risk level) and progressing through detailed sections when requested.
 }
 \examples{
 \dontrun{
 result <- crypto_predictive_framework()
 print_crypto_summary(result)
+print_crypto_summary(result, detailed = FALSE)
 }
+
 }
